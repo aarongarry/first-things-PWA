@@ -1,5 +1,7 @@
 # First Things
 
+First Things is a PWA for the IS-401 Project Management course, combining a to-do list with app blocking.
+
 ## App Summary
 
 First Things is an app that helps people finish important tasks before getting distracted by their phones. Our main audience is college students who want to make progress on school and personal goals but end up spending more time scrolling than they planned. The app lets users set bigger goals and break them down into smaller tasks for the day. An AI helper named George guides users through setup and helps them choose manageable next steps. As users complete tasks, they earn short breaks to spend on distracting apps. Our current version saves tasks and goals in Supabase so they are still there after a page refresh. Phone verification, George’s responses, photo checks, calendar connections, and app blocking are still simulated in this prototype, but saving and loading task data uses the database.
