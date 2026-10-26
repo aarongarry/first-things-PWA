@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#3155ef" />
+    <title>First Things — A little progress, a little freedom</title>
+    <meta
+      name="description"
+      content="Your goals, one small step at a time. A working First Things prototype with George, daily tasks, and earned breaks."
+    />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='18' fill='%233155ef'/%3E%3Cpath d='M18 33l9 9 20-23' fill='none' stroke='white' stroke-width='7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="desktop-brand">
+      <span class="brand-mark">✓</span
+      ><strong>first things<span class="brand-period">.</span></strong
+      ><span class="prototype-label">INTERACTIVE PROTOTYPE</span>
+    </div>
+    <div class="workspace">
+      <aside class="desktop-intro">
+        <span class="eyebrow">A LITTLE PROGRESS. A LITTLE FREEDOM.</span>
+        <h1>Make room for<br />what <span>matters.</span></h1>
+        <p>Your goals come first.<br />The scroll can wait.</p>
+        <div class="intro-note">
+          <span class="tiny-star">✳</span
+          ><span>Small steps, with a little<br />help from George.</span>
+        </div>
+      </aside>
+      <main class="phone" aria-label="First Things app">
+        <div class="statusbar">
+          <b id="phone-time">9:41</b><span class="island"></span
+          ><span>▮▮▮ &nbsp; ◔ &nbsp; ▰</span>
+        </div>
+        <div id="database-status" class="database-status" role="status" aria-live="polite"></div>
+        <div id="app" class="app-content"></div>
+        <div id="toast" class="toast" role="status" aria-live="polite"></div>
+        <div class="home-indicator"></div>
+      </main>
+      <aside class="demo-panel">
+        <div class="demo-tag"><span></span> LIVE DEMO</div>
+        <h2>Meet your next<br />small win.</h2>
+        <p>Start as a new user.<br />Everything you need is here.</p>
+        <div class="demo-note">
+          <span>01</span>
+          <p>Make a plan with George</p>
+        </div>
+        <div class="demo-note">
+          <span>02</span>
+          <p>Check off your first things</p>
+        </div>
+        <div class="demo-note">
+          <span>03</span>
+          <p>Earn a little scroll time</p>
+        </div>
+        <button class="demo-controls-trigger" data-action="demo">
+          Demo controls
+        </button>
+        <p class="simulation-note">
+          Phone codes, AI, calendars, photos, and app locks are simulated. No
+          external accounts needed.
+        </p>
+      </aside>
+    </div>
+    <footer class="desktop-footer">
+      <span>Big intentions. Small beginnings.</span
+      ><span>DESIGNED FOR YOUR EVERYDAY</span>
+    </footer>
+    <dialog id="modal"></dialog>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
