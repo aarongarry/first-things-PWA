@@ -9,7 +9,7 @@ export function normalizePhone(value) {
   const text = String(value).trim();
   if (!/^\+?[\d\s().-]+$/.test(text)) throw Error('Enter a valid phone number.');
   let digits = text.replace(/\D/g, '');
-  if (digits.length === 10) digits = '1' + digits;
+  if (digits.length === 10 && !text.startsWith('+')) digits = '1' + digits;
   if (digits.length < 11 || digits.length > 15) throw Error('Use 10 digits for US/Canada, or include your country code.');
   return '+' + digits;
 }
@@ -63,7 +63,7 @@ export function mergeSnapshots(base, local, remote) {
   return copy(local);
 }
 
-export function createAccountStore({ storage, remote, online = () => true, report = () => {}, changed = () => {} }) {
+export function createAccountStore({ storage, remote, online = () => true, report = () => {}, changed = () => {}, renamed = () => {} }) {
   const running = new Map();
   const read = phone => {
     const raw = storage.getItem(ACCOUNT_PREFIX + phone);
@@ -79,7 +79,9 @@ export function createAccountStore({ storage, remote, online = () => true, repor
     return record;
   };
   function open(phone, seed) {
-    return read(phone) || write(phone, { schema: 1, local: copy(seed), base: copy(seed), version: 0, linked: false });
+    const existing = read(phone);
+    if (existing?.retired) throw Error('This account changed phone numbers. Sign in with the new number.');
+    return existing || write(phone, { schema: 1, local: copy(seed), base: copy(seed), version: 0, linked: false });
   }
   function update(phone, previous, next) {
     const record = read(phone) || open(phone, next);
@@ -89,11 +91,19 @@ export function createAccountStore({ storage, remote, online = () => true, repor
   }
   async function drain(phone) {
     try {
+      if (read(phone)?.retired) { report(phone, 'moved', 'This account changed phone numbers. Sign out and use the new number.'); return; }
       if (!remote) { report(phone, 'local'); return; }
       if (!online()) { report(phone, 'offline'); return; }
       report(phone, 'syncing');
       for (let attempt = 0; attempt < 5; attempt++) {
+        if (read(phone)?.pendingMove) { await completeMove(phone); return; }
         const cloud = await remote.load(phone);
+        if (cloud.retired) {
+          const old = read(phone);
+          if (old) { old.retired = true; write(phone, old); }
+          report(phone, 'moved', 'This account changed phone numbers. Sign out and use the new number. Any unsynced edits remain on this device.');
+          return;
+        }
         let record = read(phone);
         if (!record) return;
         const captured = copy(record.local);
@@ -105,6 +115,7 @@ export function createAccountStore({ storage, remote, online = () => true, repor
         let version = cloud.version;
         if (!equal(merged, cloud.state)) {
           const result = await remote.save(phone, merged, cloud.version);
+          if (result.retired) continue;
           if (result.conflict) continue;
           version = result.version;
         }
@@ -122,17 +133,91 @@ export function createAccountStore({ storage, remote, online = () => true, repor
       report(phone, online() ? 'error' : 'offline', error.message);
     }
   }
+  async function completeMove(phone) {
+    let record = read(phone);
+    const move = record.pendingMove;
+    if (!move) throw Error('No phone change is pending.');
+    const result = remote ? await remote.rename(phone, move.phone, move.name, record.version, move.id) : {
+      version: record.version + 1,
+      state: { ...copy(record.local), profile: { phone: move.phone, name: move.name } },
+    };
+    if (result.taken || result.conflict || result.retired) {
+      delete record.pendingMove;
+      write(phone, record);
+      throw Error(result.taken ? 'That phone number already belongs to an account. Choose another number or sign out to use that account.'
+        : result.retired ? 'This account already changed numbers. Sign in with its new number.'
+        : 'Your account changed on another device. Please save your profile again.');
+    }
+    record = read(phone);
+    const local = mergeSnapshots(record.base, record.local, result.state);
+    local.profile.phone = move.phone;
+    // Write the destination first. Keep a recoverable source copy, and the move
+    // journal until both writes succeed. The server operation is idempotent.
+    write(move.phone, {schema:1, local, base:copy(result.state), version:result.version, linked:true, moveId:move.id});
+    record.retired = true;
+    delete record.pendingMove;
+    write(phone, record);
+    renamed(phone, move.phone, copy(local));
+    report(move.phone, equal(local, result.state) ? 'saved' : 'local');
+    return copy(local);
+  }
+  async function rename(phone, target, name) {
+    target = normalizePhone(target);
+    name = String(name).trim();
+    if (!name || name.length > 40) throw Error('Enter a name of 1–40 characters.');
+    if (target === phone) throw Error('Use the profile editor to save a name without changing numbers.');
+    if (remote && !online()) throw Error('Connect to the internet to change your phone number. You can still change your name offline.');
+    // Wait for any existing save/move before taking this account's sync lock.
+    while (running.has(phone)) await running.get(phone);
+    const work = (async () => {
+      let record = read(phone);
+      if (!record || record.retired) throw Error('Sign in with your current phone number first.');
+      if (record.pendingMove) {
+        if (record.pendingMove.phone !== target) throw Error('A phone change is already pending. Reconnect to finish it first.');
+        return completeMove(phone);
+      }
+      const destination = read(target);
+      if (destination && !destination.retired) throw Error('That number already has a saved account on this device. Choose another number or sign out to use it.');
+      await drain(phone);
+      record = read(phone);
+      if (record.retired) throw Error('This account changed phone numbers on another device.');
+      if (remote && (!record.linked || !equal(record.local, record.base)))
+        throw Error('Wait for your tasks to finish syncing, then save your profile again.');
+      record.pendingMove = { phone: target, name, id: crypto.randomUUID() };
+      write(phone, record);
+      return completeMove(phone);
+    })();
+    running.set(phone, work);
+    try { return await work; }
+    finally { running.delete(phone); }
+  }
   function sync(phone) {
     if (!running.has(phone)) running.set(phone, drain(phone).finally(() => running.delete(phone)));
     return running.get(phone);
+  }
+  async function refreshRetired(phone) {
+    const record = read(phone);
+    if (!record?.retired || !remote || !online()) return;
+    const cloud = await remote.load(phone);
+    if (!cloud.state || cloud.retired) return;
+    // The server only lets the same identity reclaim its former number.
+    record.local = mergeSnapshots(record.base, record.local, cloud.state);
+    record.base = copy(cloud.state);
+    record.version = cloud.version;
+    record.retired = false;
+    record.linked = true;
+    write(phone, record);
   }
   function phones() {
     const result = [];
     for (let i = 0; i < storage.length; i++) {
       const key = storage.key(i);
-      if (key?.startsWith(ACCOUNT_PREFIX)) result.push(key.slice(ACCOUNT_PREFIX.length));
+      if (key?.startsWith(ACCOUNT_PREFIX)) {
+        const phone = key.slice(ACCOUNT_PREFIX.length);
+        if (!read(phone)?.retired) result.push(phone);
+      }
     }
     return result;
   }
-  return { read, open, update, sync, phones };
+  return { read, open, update, sync, phones, rename, refreshRetired };
 }

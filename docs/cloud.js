@@ -13,6 +13,10 @@ export function createCloud(fetcher = fetch) {
     return response.json();
   }
   return {
+    rename: (phone, target, name, version, requestId) => rpc('first_things_demo_rename', {
+      account_phone: phone, new_phone: target, new_name: name,
+      expected_version: version, request_id: requestId,
+    }),
     load: phone => rpc('first_things_demo_load', { account_phone: phone }),
     save: (phone, state, version) => rpc('first_things_demo_save', {
       account_phone: phone, payload: state, expected_version: version,

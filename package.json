@@ -4,6 +4,6 @@
   "type": "module",
   "scripts": {
     "start": "python3 -m http.server 4173 --directory docs",
-    "test": "node tests/behavior.mjs && node tests/database.mjs && node tests/session.mjs && node tests/offline.mjs && node tests/pwa.mjs"
+    "test": "node tests/behavior.mjs && node tests/database.mjs && node tests/session.mjs && node tests/offline.mjs && node tests/pwa.mjs && node tests/profile.mjs"
   }
 }

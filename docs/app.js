@@ -62,6 +62,13 @@ function databaseStatus(phase, message = "") {
   };
   element.textContent = labels[phase] || message;
   element.dataset.phase = phase;
+  if (phase === "moved") {
+    root.inert = true;
+    const button = document.createElement("button");
+    button.textContent = "Sign out";
+    button.addEventListener("click", signOut);
+    element.append(" ", button);
+  }
   if (phase === "error" || phase === "offline" || phase === "storage") {
     const retry = document.createElement("button");
     retry.textContent = "Retry";
@@ -76,6 +83,16 @@ const accounts = createAccountStore({
   online: () => navigator.onLine,
   report(phone, phase, message) {
     if (phone === activePhone && !storageFailed) databaseStatus(phase, message);
+  },
+  renamed(oldPhone, newPhone, snapshot) {
+    if (activePhone !== oldPhone) return;
+    activePhone = newPhone;
+    applySnapshot(s, snapshot);
+    lastSnapshot = accountSnapshot(s);
+    rememberLogin();
+    closeModal();
+    render();
+    toast("Profile updated. Use your new number next time you sign in.");
   },
   changed(phone, snapshot) {
     if (phone !== activePhone || storageFailed) return;
@@ -154,6 +171,7 @@ async function importLegacyAccount() {
   }
 }
 function activateAccount(phone, name = "") {
+  if (accounts.read(phone)?.retired) throw Error("This account changed phone numbers. Sign in with the new number.");
   activePhone = phone;
   const seed = initial();
   seed.profile = { phone, name: name || "Friend" };
@@ -169,6 +187,7 @@ function activateAccount(phone, name = "") {
 }
 function signOut() {
   persistAccount();
+  root.inert = false;
   activePhone = null;
   lastSnapshot = null;
   s = initial();
@@ -920,7 +939,7 @@ function settings() {
     s.profile.name[0]?.toUpperCase()
   )}</span><div><b>${esc(s.profile.name)}</b><small>${esc(
     s.profile.phone
-  )}</small></div><button class="icon-btn" data-action="profile" aria-label="Edit profile">${icon(
+  )}</small></div><button class="text-link profile-edit" data-action="profile" aria-label="Edit profile">Edit ${icon(
     "edit"
   )}</button></div><p class="section-label">YOUR DAILY RHYTHM</p>${[
     [
@@ -1573,7 +1592,7 @@ document.addEventListener("click", async (e) => {
           s.profile.name
         )}" maxlength="40"></label><label class="field"><span>Phone number</span><input type="tel" name="phone" value="${esc(
           s.profile.phone
-        )}" readonly></label><div class="form-error" role="alert"></div><button class="button">Save profile</button><p class="small muted">To use another number, sign out and switch accounts. Your tasks stay with this number.</p></form>`
+        )}" autocomplete="tel" required></label><div class="form-error" role="alert"></div><button class="button" type="submit">Save profile</button><p class="small muted">Changing your number moves this account and its tasks to the new number. You’ll use it next time you sign in. A number change needs internet; name changes also work offline.</p></form>`
       );
       break;
     case "sample-photo": {
@@ -1769,7 +1788,7 @@ document.addEventListener("change", (e) => {
 document.addEventListener("input", (e) => {
   if (e.target.name === "message") chatDraft = e.target.value;
 });
-document.addEventListener("submit", (e) => {
+document.addEventListener("submit", async (e) => {
   const form = e.target;
   if (!form.dataset.form) return;
   e.preventDefault();
@@ -1792,7 +1811,8 @@ document.addEventListener("submit", (e) => {
       try { phone = normalizePhone(values.phone); }
       catch (problem) { fail(problem.message); break; }
       error = "";
-      activateAccount(phone, values.name.trim());
+      try { await accounts.refreshRetired(phone); activateAccount(phone, values.name.trim()); }
+      catch (problem) { fail(problem.message); break; }
       render();
       syncAccounts();
       break;
@@ -1890,20 +1910,33 @@ document.addEventListener("submit", (e) => {
       break;
     }
     case "profile": {
-      if (
-        !values.name.trim() ||
-        !/^[+\d\s().-]+$/.test(values.phone) ||
-        values.phone.replace(/\D/g, "").length < 10 ||
-        values.phone.replace(/\D/g, "").length > 15
-      ) {
-        fail("Add your name and a phone number with 10–15 digits.");
-        break;
+      let phone;
+      const name = values.name.trim();
+      if (!name || name.length > 40) { fail("Enter a name of 1–40 characters."); break; }
+      try { phone = normalizePhone(values.phone); }
+      catch (problem) { fail(problem.message); break; }
+      if (phone !== activePhone) {
+        const save = form.querySelector('button[type="submit"]');
+        save.disabled = true;
+        save.textContent = "Saving profile…";
+        try {
+          persistAccount();
+          if (storageFailed) throw Error("Free some device storage before changing your number.");
+          if (legacyPhone) throw Error("Wait for your previous tasks to finish importing, then try again.");
+          await accounts.rename(activePhone, phone, name);
+        } catch (problem) {
+          fail(problem.message);
+          save.disabled = false;
+          save.textContent = "Save profile";
+        }
+      } else {
+        s.profile = { name, phone: activePhone };
+        persistAccount();
+        if (storageFailed) { fail("Your profile couldn’t be saved. Free some device storage and try again."); break; }
+        closeModal();
+        render();
+        toast("Profile updated.");
       }
-      s.profile = { name: values.name.trim(), phone: activePhone };
-      rememberLogin();
-      closeModal();
-      render();
-      toast("Profile updated.");
       break;
     }
     case "chat":
