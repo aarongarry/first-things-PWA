@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
-import { initial, addTask } from '../dist/model.js';
-import { SESSION_KEY, restoreLogin, saveLogin } from '../dist/session.js';
-import { USE_SUPABASE, getSupabaseClient } from '../dist/supabase-config.js';
+import { initial, addTask } from '../docs/model.js';
+import { SESSION_KEY, restoreLogin, saveLogin } from '../docs/session.js';
+import { USE_SUPABASE, getSupabaseClient } from '../docs/supabase-config.js';
 const values = new Map();
 const storage = {
   getItem: key => values.get(key) ?? null,

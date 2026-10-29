@@ -16,11 +16,13 @@ import {
   suggest,
 } from "./model.js";
 import { restoreLogin, saveLogin } from "./session.js";
-import { USE_SUPABASE } from "./supabase-config.js";
-import { connectDatabase, createSync, databaseSnapshot } from "./database.js";
+import { USE_SUPABASE, SUPABASE_URL, SUPABASE_KEY } from "./supabase-config.js";
+import { createCloud } from "./cloud.js";
+import { normalizePhone, accountSnapshot, applySnapshot, createAccountStore } from "./offline.js";
+import { setupPWA } from "./pwa.js";
 const root = document.querySelector("#app"),
   modal = document.querySelector("#modal");
-// Only the demo login survives a refresh; task and goal data stay in memory.
+// Login and account data are stored separately, so signing out keeps queued edits.
 let loginStorage;
 try { loginStorage = window.localStorage; } catch { /* Storage may be blocked. */ }
 let s = restoreLogin(initial(), loginStorage);
@@ -41,68 +43,149 @@ let error = "",
   calendarError = false,
   calendarBusy = false,
   modalVersion = 0;
-let databaseSync = null;
-let databasePhase = USE_SUPABASE ? "waiting" : "demo";
+let activePhone = null;
+let lastSnapshot = null;
+let syncTimer;
+let legacyPhone = null;
+let legacyImport = null;
+let storageFailed = false;
 function databaseStatus(phase, message = "") {
   const element = document.querySelector("#database-status");
   const labels = {
-    demo: "Demo mode · Tasks reset on refresh. Your login is remembered.",
-    waiting: "Supabase enabled · Finish demo onboarding to connect.",
-    loading: "Loading your saved tasks…",
-    saving: "Saving changes… Wait before refreshing.",
-    saved: "Saved to Supabase · Tasks will survive a refresh.",
-    error: "Not saved: " + message,
-    loadError: "Couldn’t load tasks: " + message,
+    welcome: "Your day, on any device.",
+    local: "Saved on this device",
+    offline: "Offline · Saved on this device. Syncs when you reconnect.",
+    syncing: "Saved on this device · Syncing…",
+    saved: "All changes synced",
+    error: message || "Saved on this device · Cloud sync will retry.",
+    storage: "Couldn’t save on this device. Keep this app open and free some storage.",
   };
-  element.textContent = labels[phase];
-  if (phase === "error" || phase === "loadError") {
+  element.textContent = labels[phase] || message;
+  element.dataset.phase = phase;
+  if (phase === "error" || phase === "offline" || phase === "storage") {
     const retry = document.createElement("button");
     retry.textContent = "Retry";
     retry.type = "button";
-    retry.addEventListener("click", () => {
-      if (databaseSync) databaseSync.retry();
-      else void startDatabase();
-    });
+    retry.addEventListener("click", () => { persistAccount(); syncAccounts(); });
     element.append(" ", retry);
   }
 }
-async function startDatabase() {
-  if (!USE_SUPABASE || !s.onboarded || databasePhase === "loading" || databaseSync) return;
-  databasePhase = "loading";
-  root.inert = true;
-  closeModal();
-  databaseStatus("loading");
+const accounts = createAccountStore({
+  storage: loginStorage,
+  remote: USE_SUPABASE ? createCloud() : null,
+  online: () => navigator.onLine,
+  report(phone, phase, message) {
+    if (phone === activePhone && !storageFailed) databaseStatus(phase, message);
+  },
+  changed(phone, snapshot) {
+    if (phone !== activePhone || storageFailed) return;
+    const wasOnboarded = s.onboarded;
+    applySnapshot(s, snapshot);
+    lastSnapshot = accountSnapshot(s);
+    if (!wasOnboarded && s.onboarded) s.screen = "home";
+    rememberLogin();
+    if (!modal.open && !document.activeElement?.matches('input, textarea, select')) render();
+  },
+});
+function persistAccount() {
+  if (!activePhone || !s.loginVerified) return;
   try {
-    const connection = await connectDatabase();
-    if (connection.state) {
-      s.goals = connection.state.goals;
-      s.tasks = connection.state.tasks.map(t => ({
-        duration: "", recurrence: "none", failures: 0, anchor: s.day, ...t,
-      }));
-      for (const key of ["day", "templates", "ledger", "activeUntil", "requestedBreaks", "selectedApps", "timeOffset"]) {
-        if (Object.hasOwn(connection.state.daily, key)) s[key] = connection.state.daily[key];
-      }
+    const next = accountSnapshot(s);
+    const dirty = JSON.stringify(next) !== JSON.stringify(lastSnapshot);
+    if (dirty || storageFailed) {
+      applySnapshot(s, accounts.update(activePhone, lastSnapshot, next));
+      lastSnapshot = accountSnapshot(s);
+      storageFailed = false;
+      databaseStatus(navigator.onLine ? "local" : "offline");
+      clearTimeout(syncTimer);
+      syncTimer = setTimeout(syncAccounts, 400);
     }
-    databaseSync = createSync(snapshot => connection.save(snapshot), databaseStatus);
-    // A fresh database needs an initial save; an existing one starts clean.
-    if (connection.state) databaseSync.seed(databaseSnapshot(s));
-    databasePhase = "ready";
-    root.inert = false;
-    databaseStatus("saved");
-    render();
-  } catch (error) {
-    databasePhase = "loadError";
-    // Keep editing disabled until the initial load succeeds, so an empty local
-    // state can never accidentally overwrite tasks we could not retrieve.
-    databaseStatus("loadError", error.message || String(error));
+    rememberLogin();
+  } catch {
+    storageFailed = true;
+    databaseStatus("storage");
   }
 }
-window.addEventListener("beforeunload", event => {
-  if (databaseSync?.pending()) {
-    event.preventDefault();
-    event.returnValue = "";
+function syncAccounts() {
+  if (storageFailed) return;
+  if (legacyPhone && navigator.onLine) {
+    if (!legacyImport) legacyImport = importLegacyAccount().finally(() => { legacyImport = null; });
+    return;
   }
+  try {
+    // Also deliver edits queued under an account that has since signed out.
+    for (const phone of accounts.phones()) void accounts.sync(phone);
+  } catch { databaseStatus("storage"); }
+}
+// Import only the old anonymous session held by this browser, into its own
+// remembered phone account. Original ERD records stay intact.
+async function importLegacyAccount() {
+  const phone = legacyPhone;
+  try {
+    const project = new URL(SUPABASE_URL).hostname.split(".")[0];
+    const token = JSON.parse(loginStorage.getItem(`sb-${project}-auth-token`) || "null")?.access_token;
+    if (token) {
+      const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/first_things_load`, {
+        method: "POST", headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: "{}", signal: AbortSignal.timeout(12000),
+      });
+      if (response.ok) {
+        const old = await response.json();
+        if (old.state) {
+          const record = accounts.read(phone);
+          const previous = record.local;
+          const imported = structuredClone(previous);
+          imported.goals = old.state.goals;
+          imported.tasks = old.state.tasks;
+          imported.daily = { ...imported.daily, ...old.state.daily };
+          imported.onboarded = true;
+          const result = accounts.update(phone, record.base, imported);
+          if (activePhone === phone) {
+            applySnapshot(s, result); lastSnapshot = accountSnapshot(s); s.screen = "home"; render();
+          }
+        }
+      } else if (response.status >= 500) throw Error("Legacy import unavailable");
+    }
+    legacyPhone = null;
+    loginStorage.removeItem("first-things-legacy-pending");
+    syncAccounts();
+  } catch {
+    if (activePhone === phone) databaseStatus("error", "Your new edits are saved locally. Reconnect to finish importing your previous tasks.");
+  }
+}
+function activateAccount(phone, name = "") {
+  activePhone = phone;
+  const seed = initial();
+  seed.profile = { phone, name: name || "Friend" };
+  seed.loginVerified = true;
+  s = seed;
+  try {
+    applySnapshot(s, accounts.open(phone, accountSnapshot(seed)).local);
+    storageFailed = false;
+  } catch { storageFailed = true; databaseStatus("storage"); }
+  lastSnapshot = accountSnapshot(s);
+  s.screen = s.onboarded ? "home" : "tone";
+  rememberLogin();
+}
+function signOut() {
+  persistAccount();
+  activePhone = null;
+  lastSnapshot = null;
+  s = initial();
+  rememberLogin();
+  closeModal();
+  databaseStatus("welcome");
+  render();
+}
+window.addEventListener("online", syncAccounts);
+window.addEventListener("offline", () => { if (activePhone && !storageFailed) databaseStatus("offline"); });
+window.addEventListener("focus", syncAccounts);
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) persistAccount();
+  else syncAccounts();
 });
+window.addEventListener("pagehide", persistAccount);
+setInterval(() => { if (!document.hidden) syncAccounts(); }, 30000);
 const esc = (v) =>
   String(v ?? "").replace(
     /[&<>"']/g,
@@ -265,12 +348,11 @@ function navigation(active) {
     .join("")}</nav>`;
 }
 function render() {
-  if (USE_SUPABASE && s.onboarded && databasePhase === "waiting") void startDatabase();
+
   rollover(s);
   reconcile(s);
   const map = {
     welcome: welcome,
-    code: code,
     tone: tone,
     conversation: conversation,
     firstGoal: firstGoal,
@@ -287,7 +369,7 @@ function render() {
     lockscreen: lockscreen,
   };
   root.innerHTML = (map[s.screen] || home)();
-  if (databaseSync && s.onboarded) databaseSync.push(databaseSnapshot(s));
+  persistAccount();
   if (s.screen === "chat" || s.screen === "conversation")
     root.scrollTop = root.scrollHeight;
   document.querySelector("#phone-time").textContent = new Date(
@@ -295,33 +377,13 @@ function render() {
   ).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 }
 function welcome() {
-  return `<section class="page welcome"><div class="wordmark"><span class="brand-mark">✓</span>first things<span class="brand-period">.</span></div><div class="hero-art"><img src="george.png" alt="George, your friendly blue companion"><span class="hello">Hey, I’m George!</span></div><h1>First, your goals.<br><span>Then, your scroll.</span></h1><p class="body-copy">Make a little progress on what matters.<br>Unlock a little time for everything else.</p><form data-form="signup" novalidate><label class="field"><span>What should we call you?</span><input name="name" value="${esc(
+  return `<section class="page welcome"><div class="wordmark"><span class="brand-mark">✓</span>first things<span class="brand-period">.</span></div><div class="hero-art"><img src="george.png" alt="George, your friendly blue companion"><span class="hello">Hey, I’m George!</span></div><h1>First, your goals.<br><span>Then, your scroll.</span></h1><p class="body-copy">Make a little progress on what matters.<br>Unlock a little time for everything else.</p><form data-form="signup" novalidate><label class="field"><span>Your name <small>(optional for returning users)</small></span><input name="name" value="${esc(
     s.profile.name
   )}" placeholder="Your first name" autocomplete="given-name" maxlength="40"></label><label class="field"><span>Phone number</span><input type="tel" name="phone" value="${esc(
     s.profile.phone
   )}" placeholder="(555) 123-4567" autocomplete="tel"></label>${
     error ? `<div class="error" role="alert">${esc(error)}</div>` : ""
-  }<button class="button">Let’s do first things</button><p class="privacy-note">Next up: a confirmation code. Use any<br>10-digit demo number — no text is sent.</p></form><button class="button ghost mobile-demo" data-action="demo">Demo controls</button></section>`;
-}
-function code() {
-  return step(
-    "Check your messages.",
-    "A tiny step before the good stuff.",
-    1,
-    `<div class="code-symbol">${icon(
-      "phone"
-    )}</div><p class="small muted">Your demo code was sent to <b>${esc(
-      s.profile.phone
-    )}</b>.</p><form data-form="code" novalidate><label class="field"><span>6-digit confirmation code</span><input class="code-input" name="code" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" value="${esc(
-      s.codeDraft || ""
-    )}"></label><div class="demo-code">DEMO CODE <b>123456</b><button data-action="fill-code" type="button">Use code</button></div>${
-      error ? `<div class="error" role="alert">${esc(error)}</div>` : ""
-    }<button class="button" ${busy ? "disabled" : ""}>${
-      busy ? "Confirming…" : "Confirm my number"
-    }</button></form><button class="button ghost" data-action="resend">Send a new code</button><button class="text-link" data-action="expire">Demo: try an expired code</button>`,
-    "",
-    "edit-number"
-  );
+  }<button class="button">Continue with phone number</button><p class="privacy-note">Use the same number to find your account.<br>Demo login: no code or text. Anyone with your number can open this demo account.</p></form><button class="button secondary install-button" data-install>Install First Things</button><p class="install-caption">Keep your day one tap away. Works offline.</p><button class="button ghost mobile-demo" data-action="demo">Demo controls</button></section>`;
 }
 function tone() {
   return step(
@@ -899,7 +961,7 @@ function settings() {
     "spark"
   )}<span><b>Demo controls</b><small>Explore resets and recovery states</small></span><span>›</span></button><button class="setting-row" data-action="day-rules">${icon(
     "clock"
-  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><p class="privacy-note">${USE_SUPABASE ? "Tasks and goals use Supabase. Your demo login is remembered in this browser." : "This browser remembers your demo login only.<br>Tasks, goals, and progress reset on refresh."}<br>${USE_SUPABASE ? "Phone verification, AI, calendars, and app locks are simulated." : "All integrations and restrictions are simulated."}</p></section>${navigation(
+  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>AI, calendars, photos, and app blocking are simulated.</p></section>${navigation(
     "settings"
   )}`;
 }
@@ -1140,7 +1202,7 @@ function photoDialog(id) {
 function demo() {
   openModal(
     "Explore the demo.",
-    `<p>Everything happens right here. Use a sample number and code <b>123456</b> to try the new-user journey.</p><div class="stack">${btn(
+    `<p>Use a sample phone number to try the new-user journey. App blocking and integrations are demonstrations.</p><div class="stack">${btn(
       "Open a ready-made day",
       "sample-day",
       "secondary"
@@ -1161,7 +1223,7 @@ function demo() {
       "Restart the new-user journey",
       "reset",
       "danger"
-    )}</div><p class="small muted">Demo controls affect this browser’s prototype only.</p>`
+    )}</div><p class="small muted">Changes to tasks and daily progress also sync to this demo phone account.</p>`
   );
 }
 function rules() {
@@ -1313,13 +1375,13 @@ document.addEventListener("click", async (e) => {
       go(el.dataset.to);
       break;
     case "back": {
+      if (!s.onboarded && s.screen === "tone") { signOut(); break; }
       if (s.onboarded) {
         go("settings");
         break;
       }
       const steps = [
         "welcome",
-        "code",
         "tone",
         "conversation",
         "firstGoal",
@@ -1334,19 +1396,6 @@ document.addEventListener("click", async (e) => {
     }
     case "edit-number":
       go("welcome");
-      break;
-    case "fill-code":
-      document.querySelector("[name=code]").value = "123456";
-      break;
-    case "resend":
-      s.codeExpires = now(s) + 300000;
-      s.codeDraft = "";
-      render();
-      toast("A new demo code is ready: 123456. It lasts 5 minutes.");
-      break;
-    case "expire":
-      s.codeExpires = now(s) - 1;
-      toast("The demo code has expired. Submit it to try the recovery.");
       break;
     case "tone":
       s.tone = v;
@@ -1514,6 +1563,9 @@ document.addEventListener("click", async (e) => {
     case "settings-page":
       go(el.dataset.to);
       break;
+    case "sign-out":
+      signOut();
+      break;
     case "profile":
       openModal(
         "A little about you.",
@@ -1521,7 +1573,7 @@ document.addEventListener("click", async (e) => {
           s.profile.name
         )}" maxlength="40"></label><label class="field"><span>Phone number</span><input type="tel" name="phone" value="${esc(
           s.profile.phone
-        )}"></label><div class="form-error" role="alert"></div><button class="button">Save profile</button><p class="small muted">Your demo login is remembered in this browser. ${USE_SUPABASE ? "Tasks and goals use Supabase." : "Tasks and goals reset on refresh."}</p></form>`
+        )}" readonly></label><div class="form-error" role="alert"></div><button class="button">Save profile</button><p class="small muted">To use another number, sign out and switch accounts. Your tasks stay with this number.</p></form>`
       );
       break;
     case "sample-photo": {
@@ -1673,19 +1725,15 @@ document.addEventListener("click", async (e) => {
     case "reset":
       openModal(
         "A fresh beginning?",
-        `<p>Restarting signs you out of the demo and clears the current tasks, goals, and progress.</p>${btn(
-          "Restart demo",
+        `<p>Sign out to try another number. This account’s tasks and pending changes stay saved on this device.</p>${btn(
+          "Sign out",
           "confirm-reset",
           "danger"
         )}${btn("Keep my progress", "close-modal", "ghost")}`
       );
       break;
     case "confirm-reset":
-      if (USE_SUPABASE) { toast("Switch off Supabase in the config to restart the demo."); break; }
-      s = initial();
-      rememberLogin();
-      closeModal();
-      render();
+      signOut();
       break;
   }
 });
@@ -1740,47 +1788,13 @@ document.addEventListener("submit", (e) => {
   };
   switch (form.dataset.form) {
     case "signup": {
-      s.profile = { name: values.name.trim(), phone: values.phone.trim() };
-      if (!s.profile.name) {
-        fail("What should we call you? Add your name to continue.");
-        break;
-      }
-      if (
-        !/^\+?[\d\s().-]+$/.test(values.phone) ||
-        values.phone.replace(/\D/g, "").length < 10 ||
-        values.phone.replace(/\D/g, "").length > 15
-      ) {
-        fail(
-          "Use a valid phone number with 10–15 digits, including your area code."
-        );
-        break;
-      }
-      s.codeExpires = now(s) + 300000;
-      s.codeDraft = "";
-      go("code");
-      break;
-    }
-    case "code": {
-      s.codeDraft = values.code;
-      if (now(s) > s.codeExpires) {
-        error = "This code has expired. Tap “Send a new code” and try again.";
-        render();
-        break;
-      }
-      if (values.code !== "123456") {
-        error = "That code doesn’t match. Use the demo code 123456.";
-        render();
-        break;
-      }
-      busy = true;
+      let phone;
+      try { phone = normalizePhone(values.phone); }
+      catch (problem) { fail(problem.message); break; }
       error = "";
+      activateAccount(phone, values.name.trim());
       render();
-      setTimeout(() => {
-        busy = false;
-        s.loginVerified = true;
-        rememberLogin();
-        go("tone");
-      }, 500);
+      syncAccounts();
       break;
     }
     case "answer": {
@@ -1885,7 +1899,7 @@ document.addEventListener("submit", (e) => {
         fail("Add your name and a phone number with 10–15 digits.");
         break;
       }
-      s.profile = { name: values.name.trim(), phone: values.phone.trim() };
+      s.profile = { name: values.name.trim(), phone: activePhone };
       rememberLogin();
       closeModal();
       render();
@@ -1941,8 +1955,22 @@ document.addEventListener("visibilitychange", () => {
   if (!document.hidden) updateTimers();
 });
 setInterval(updateTimers, 1000);
-databaseStatus(databasePhase);
+databaseStatus("welcome");
+if (s.loginVerified) {
+  try {
+    const phone = normalizePhone(s.profile.phone);
+    legacyPhone = loginStorage.getItem("first-things-legacy-pending");
+    if (!accounts.read(phone) && USE_SUPABASE) {
+      legacyPhone = phone;
+      loginStorage.setItem("first-things-legacy-pending", phone);
+    }
+    activateAccount(phone, s.profile.name);
+  }
+  catch { s = initial(); rememberLogin(); }
+}
+setupPWA({ beforeUpdate: () => { persistAccount(); return !storageFailed; } });
 render();
+syncAccounts();
 updateTimers();
 // Optional browser-native tools share the same state and visible actions.
 if (document.modelContext?.registerTool) {
@@ -1990,7 +2018,7 @@ if (document.modelContext?.registerTool) {
     annotations: { readOnlyHint: false },
     execute: (input) => {
       if (!s.onboarded) throw Error("Complete onboarding first.");
-      if (USE_SUPABASE && databasePhase !== "ready") throw Error("Wait for your saved tasks to load.");
+
       if (
         !input ||
         typeof input.title !== "string" ||

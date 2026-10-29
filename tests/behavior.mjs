@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {initial,stats,addTask,removeTask,completeTask,editTask,reconcile,startBreak,photoAttempt,rollover,scheduled,deleteGoal,localDay} from '../dist/model.js';
+import {initial,stats,addTask,removeTask,completeTask,editTask,reconcile,startBreak,photoAttempt,rollover,scheduled,deleteGoal,localDay} from '../docs/model.js';
 let checks=0;const test=(name,run)=>{run();checks++;console.log('PASS '+name);};
 const tasks=(n)=>{const s=initial();for(let i=0;i<n;i++)addTask(s,{title:`Task ${i+1}`});return s;};
 test('Empty list and title-only tasks',()=>{const s=initial();assert.equal(stats(s).blocked,false);assert.equal(stats(s).percent,0);assert.throws(()=>addTask(s,{title:'  '}));addTask(s,{title:'Stuff'});assert.equal(stats(s).blocked,true);assert.equal(s.tasks[0].duration,'');});

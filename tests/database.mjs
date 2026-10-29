@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
-import { createSync, databaseSnapshot } from '../dist/database.js';
-import { initial, addTask } from '../dist/model.js';
+import { createSync, databaseSnapshot } from '../docs/database.js';
+import { initial, addTask } from '../docs/model.js';
 const tick = () => new Promise(resolve => setImmediate(resolve));
 let finish;
 const calls = [], statuses = [];
