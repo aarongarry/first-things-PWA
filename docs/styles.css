@@ -23,3 +23,5 @@
   dialog{max-width:calc(100vw - 24px);max-height:calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 32px);overflow-y:auto}
   .composer input{font-size:16px}.toast{bottom:calc(82px + env(safe-area-inset-bottom));max-width:calc(100% - 30px)}
 }
+
+.shortcut-guide{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}.shortcut-guide summary{cursor:pointer;font-weight:700;line-height:1.5}.shortcut-guide li{margin:12px 0;line-height:1.6}.shortcut-guide ol{padding-left:22px}.shortcut-guide textarea{width:100%;resize:vertical;overflow-wrap:anywhere;font-size:14px}.shortcut-guide .text-link{min-height:44px}#shortcut-result{line-height:1.6;font-size:14px}

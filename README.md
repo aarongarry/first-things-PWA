@@ -58,6 +58,45 @@ After changing numbers, use the **new number** to sign in on every device. An ac
 
 If the connection drops during a number change, the app keeps a recovery record and retries while open after reconnecting. Wait for confirmation before switching numbers again. No verification code is sent; these remain demo accounts.
 
+## Instagram reminder with Apple Shortcuts (iPhone)
+
+This optional integration redirects you away from Instagram when your **synced** list has unfinished tasks and no active earned break. It is a voluntary reminder, not a Screen Time lock. The PWA cannot install an automation for you. The phone setup still needs to be completed in Apple Shortcuts.
+
+### Connect your account
+
+1. Update First Things, sign in, and wait for **All changes synced**.
+2. In **Settings → Restricted apps**, select **Instagram**.
+3. Open **Settings → Instagram shortcut**. Tap **Test my Instagram check** to verify the server response. The setup has three expandable sections, including copy buttons for your Check URL, API key, and Reminder URL.
+4. Keep your Check URL private. Its random account link can read only the Instagram access decision/message; it contains no phone number and follows your account if you change numbers. The API key is the existing browser-safe publishable key, not a service-role key. Demo phone sign-in remains unverified; this is not production authentication.
+
+### Create “Check First Things” in Apple Shortcuts
+
+Create a shortcut with these actions **in this order**:
+
+1. **URL** — paste your **Check URL** from the setup screen.
+2. **Get Contents of URL** — use that URL, method **GET**. Expand options and add a header: name **apikey**, value your copied **API key**.
+3. **Get Dictionary Value** — get the value for **decision** in **Contents of URL**.
+4. **If** — **Dictionary Value is allow**. In this branch add **Nothing**.
+5. Inside **Otherwise**, add **URL** with your **Reminder URL**, then **Open URLs** using that URL. Keep both actions before **End If**.
+
+Name the shortcut **Check First Things**. Run it once and approve connecting to this project's Supabase domain/opening the reminder if asked. If Shortcuts asks for a type for the condition, use Text. Do not add an action to open Instagram: it is already open when the automation fires, and reopening it can cause a loop.
+
+### Attach it to Instagram
+
+Create an automation with the **App** trigger → **Instagram** → **Is Opened** → **Run Immediately**. Choose **Check First Things**, or add **Run Shortcut** and select it. Save. Depending on the iOS Shortcuts layout, automation creation may be in the Automation section or presented as a trigger attached to a shortcut; the trigger and action sequence above are the same. This has not yet been verified on the user's iOS 27.2 phone.
+
+### Test on your phone
+
+- **Paused:** Add an unfinished task, wait for **All changes synced**, then open Instagram. It should redirect to the First Things reminder.
+- **Allowed:** Complete all tasks and sync. Switch away from Instagram and reopen it; the shortcut should leave it open.
+- **Earned break:** With unfinished tasks and an earned break, start the break in First Things and sync. Instagram should stay open. After the break expires, switch away and reopen Instagram to check again.
+- **Next day:** Open First Things each morning to refresh and sync the day's list. Until then, the check returns `refresh`, which uses the same reminder.
+- **Offline:** A failed network request can stop the shortcut and leave Instagram open. Offline task editing still works, but this integration needs internet and does not enforce an offline block.
+
+The redirect may open **Safari**, which can have a different login session from your installed PWA. Open the Home Screen app to use your existing session. The automation can be disabled, the app may flash before redirecting, and break expiry does not evict you from an already-open app. If you travel to a different time zone, reopen setup and replace the Check URL. Simulated time travel in Demo controls returns `refresh`; reset to real time before testing the shortcut.
+
+Apple references: [App triggers](https://support.apple.com/en-om/guide/shortcuts/apde31e9638b/ios), [API requests](https://support.apple.com/en-mt/guide/shortcuts/apd58d46713f/ios), [Dictionary values](https://support.apple.com/en-ie/guide/shortcuts/apdf01294032/ios).
+
 ## Phone accounts and offline use
 
 - Enter a phone number to create or open a **demo account**. No SMS or verification code is used. A name is optional; returning accounts keep their saved name.
@@ -75,7 +114,9 @@ If the connection drops during a number change, the app keeps a recovery record 
 
 **Real:** Home Screen installation, phone-number account lookup, persistent goals/tasks, offline editing, reconnect sync, and responsive mobile layout.
 
-**Simulated:** app blocking, George AI, calendar connection, photo verification, and lock-screen notifications. A PWA cannot block other iPhone apps.
+**Optional integration:** an Apple Shortcuts Instagram reminder uses real synced task/break status, after manual setup on each iPhone.
+
+**Simulated:** the in-app blocking preview, George AI, calendar connection, photo verification, and lock-screen notifications. A PWA cannot enforce a native iPhone app lock.
 
 ## Development
 
@@ -96,6 +137,8 @@ When editing locally, an installed service worker may keep serving the previous 
 The project URL and browser-safe publishable key are in `docs/supabase-config.js`. Keep service-role/secret keys out of frontend code.
 
 Run **`supabase/pwa-demo-accounts.sql`** when setting up the project or upgrading to profile editing in the project's SQL Editor. It is repeatable and creates a separate `first_things_demo_accounts` snapshot table and load/save/rename RPC functions. Re-running it adds the profile-editing columns and function without deleting existing accounts. Table access is blocked; the intentionally unverified demo API looks up one supplied phone number. Writes use a revision check and transaction lock. No anonymous-auth setting or external SDK is required for the new PWA.
+
+For the Instagram integration, also run **`supabase/instagram-shortcut.sql`** after the demo-account migration. This repeatable script creates account-linked status keys and two narrow RPCs. `first_things_instagram_status` supports GET with the publishable `apikey` header, uses server time and the configured time zone, and returns only `decision` (`allow`, `pause`, or `refresh`) and `message` with `Cache-Control: no-store`. It never changes task data. `tests/instagram-status.sql` runs database behavior checks in a rolled-back transaction.
 
 `supabase/setup.sql` and the original user/goal/task/daily ERD remain available for the earlier authenticated vertical slice. The migration does not alter or expose those records. When an old browser login and its still-valid anonymous session are present, the app imports those tasks into that remembered phone account once. An expired old session or a different browser may require a manual team-assisted transfer; old records remain in the original tables.
 

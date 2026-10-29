@@ -19,6 +19,7 @@ import { restoreLogin, saveLogin } from "./session.js";
 import { USE_SUPABASE, SUPABASE_URL, SUPABASE_KEY } from "./supabase-config.js";
 import { createCloud } from "./cloud.js";
 import { normalizePhone, accountSnapshot, applySnapshot, createAccountStore } from "./offline.js";
+import { shortcutConfig, checkInstagram } from "./shortcut.js";
 import { setupPWA } from "./pwa.js";
 const root = document.querySelector("#app"),
   modal = document.querySelector("#modal");
@@ -972,7 +973,7 @@ function settings() {
     )
     .join(
       ""
-    )}<p class="section-label" style="margin-top:27px">EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
+    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>Instagram shortcut</b><small>Set up your iPhone reminder</small></span><span>›</span></button><p class="section-label" style="margin-top:27px">EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
     "phone"
   )}<span><b>Try a distracting app</b><small>See why it’s paused or unlocked</small></span><span>›</span></button><button class="setting-row" data-action="lockscreen">${icon(
     "lock"
@@ -980,10 +981,50 @@ function settings() {
     "spark"
   )}<span><b>Demo controls</b><small>Explore resets and recovery states</small></span><span>›</span></button><button class="setting-row" data-action="day-rules">${icon(
     "clock"
-  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>AI, calendars, photos, and app blocking are simulated.</p></section>${navigation(
+  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>AI, calendars, and photos are simulated. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
     "settings"
   )}`;
 }
+let instagramConfig;
+async function instagramSetup() {
+  instagramConfig = null;
+  openModal("A pause before Instagram.", '<p>Connecting your synced account…</p>');
+  const version = modalVersion, phone = activePhone;
+  try {
+    if (!USE_SUPABASE || !navigator.onLine || legacyPhone || storageFailed) throw Error("Connect to the internet and wait for All changes synced first.");
+    persistAccount();
+    await accounts.sync(phone);
+    const record = accounts.read(phone);
+    if (!record?.linked || record.retired || record.pendingMove || JSON.stringify(record.local) !== JSON.stringify(record.base))
+      throw Error("Wait for All changes synced, then try again.");
+    const { access_key } = await createCloud().shortcut(phone);
+    const config = shortcutConfig(access_key, Intl.DateTimeFormat().resolvedOptions().timeZone, location.href);
+    if (version !== modalVersion || phone !== activePhone) return;
+    instagramConfig = config;
+    const field = (label, key) => `<label class="field"><span>${label}</span><textarea readonly rows="2" data-shortcut-value="${key}">${esc(config[key])}</textarea></label><button class="text-link" data-action="shortcut-copy" data-value="${key}">Copy ${label.toLowerCase()}</button>`;
+    openModal("A pause before Instagram.", `<p>When Instagram opens, your shortcut checks your synced list. It leaves Instagram open during a break or after your tasks are done. Otherwise, it opens a reminder.</p>
+      <p class="small muted">Online demo · Set up once on your iPhone · Can be disabled in Shortcuts</p>
+      <button class="button" data-action="shortcut-check">Test my Instagram check</button><p id="shortcut-result" role="status"></p>
+      <details class="shortcut-guide"><summary>1. Create “Check First Things”</summary><ol>
+      <li>Open Apple <b>Shortcuts</b> and create a shortcut named <b>Check First Things</b>.</li>
+      <li>Add <b>URL</b> and paste the Check URL below.</li>
+      <li>Add <b>Get Contents of URL</b>. Use <b>GET</b>. Expand its options, add a header named <b>apikey</b>, and paste the API key below as its value.</li>
+      <li>Add <b>Get Dictionary Value</b>. Get the value for <b>decision</b> from Contents of URL.</li>
+      <li>Add <b>If</b>: Dictionary Value <b>is</b> <b>allow</b>. Inside this branch add <b>Nothing</b>.</li>
+      <li>Inside <b>Otherwise</b>, add <b>URL</b> with the Reminder URL below, then <b>Open URLs</b> using that URL. Keep these actions before <b>End If</b>.</li>
+      <li>Run it once and allow its connection to our Supabase project and opening the reminder when prompted. Don’t add an Open Instagram action; Instagram is already open when the automation runs.</li></ol></details>
+      <details class="shortcut-guide"><summary>2. Run it when Instagram opens</summary><ol>
+      <li>In Shortcuts, add an automation with the <b>App</b> trigger. Depending on your Shortcuts layout, use Automation → + or add an automation trigger to a shortcut.</li>
+      <li>Select <b>Instagram</b> and <b>Is Opened</b>, then choose <b>Run Immediately</b>.</li>
+      <li>Choose <b>Check First Things</b> (or add <b>Run Shortcut</b> and select it). Save the automation.</li>
+      <li>In First Things → Restricted apps, select Instagram. Add an unfinished task and wait for <b>All changes synced</b>. Open Instagram to test the redirect.</li></ol></details>
+      <details class="shortcut-guide"><summary>3. Copy your setup values</summary>${field("Check URL", "url")}${field("API key", "apiKey")}${field("Reminder URL", "reminder")}<p class="small muted">Time zone: ${esc(config.zone)}. If you travel to a different time zone, reopen this setup and replace the Check URL. Your link follows phone-number changes. Keep it private: it can read your Instagram access status.</p></details>
+      <p class="small muted">Open First Things each morning and after edits; wait for All changes synced. Offline requests may stop with a Shortcuts error and leave Instagram open. A break ending won’t close an app that’s already open. The reminder may open in Safari; your Home Screen app keeps its own session.</p>`);
+  } catch (problem) {
+    if (version === modalVersion && phone === activePhone) openModal("Let’s reconnect.", `<p>${esc(problem.message)}</p><button class="button" data-action="instagram-setup">Try again</button>`);
+  }
+}
+
 function locked() {
   const st = stats(s),
     a = apps.find((a) => a.name === s.attemptedApp) || apps[0],
@@ -1585,6 +1626,27 @@ document.addEventListener("click", async (e) => {
     case "sign-out":
       signOut();
       break;
+    case "instagram-setup":
+      await instagramSetup();
+      break;
+    case "shortcut-copy":
+      if (instagramConfig && ["url", "apiKey", "reminder"].includes(v)) {
+        try { await navigator.clipboard.writeText(instagramConfig[v]); toast("Copied. Paste it into Shortcuts."); }
+        catch { modal.querySelector(`[data-shortcut-value="${v}"]`)?.select(); toast("Select and copy the highlighted value."); }
+      }
+      break;
+    case "shortcut-check": {
+      if (!instagramConfig) break;
+      const output = modal.querySelector("#shortcut-result");
+      el.disabled = true;
+      output.textContent = "Checking your latest synced list…";
+      try {
+        const result = await checkInstagram(instagramConfig);
+        output.textContent = `${result.decision === "allow" ? "Instagram stays open" : result.decision === "pause" ? "Reminder will open" : "Fresh sync needed"}: ${result.message}`;
+      } catch (problem) { output.textContent = problem.message; }
+      finally { el.disabled = false; }
+      break;
+    }
     case "profile":
       openModal(
         "A little about you.",
@@ -2067,4 +2129,11 @@ if (document.modelContext?.registerTool) {
     },
   });
   window.addEventListener("pagehide", () => lifecycle.abort(), { once: true });
+}
+
+// A neutral redirect page: no account identifiers or task data in the URL.
+if (new URL(location.href).searchParams.get("instagram") === "paused") {
+  openModal("First things first.", `<p>Take a moment before Instagram. Finish your first things or start an earned break, then wait for <b>All changes synced</b>.</p><p>If this is your first check today, open First Things to refresh today’s list. If this opened in Safari, switch to your First Things Home Screen app.</p><button class="button" data-action="close-modal">Got it</button><p class="small muted">This is a Shortcuts reminder, not an iOS app lock.</p>`);
+  const cleanURL = new URL(location.href); cleanURL.searchParams.delete("instagram");
+  history.replaceState(null, "", cleanURL);
 }

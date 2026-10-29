@@ -11,7 +11,7 @@ const cache = {
   async match(p) { return cached.get(new URL(typeof p==='string'?p:p.url,origin).href); },
 };
 vm.runInNewContext(await readFile(new URL('../docs/sw.js',import.meta.url),'utf8'),{
-  URL, Set, caches:{open:async()=>cache,keys:async()=>['other-app','first-things-shell-old','first-things-shell-v5'],delete:async key=>assert.equal(key,'first-things-shell-old')},
+  URL, Set, caches:{open:async()=>cache,keys:async()=>['other-app','first-things-shell-old','first-things-shell-v7'],delete:async key=>assert.equal(key,'first-things-shell-old')},
   fetch:()=>{throw Error('offline');},
   self:{registration:{scope:origin},clients:{claim:async()=>claims++},skipWaiting:()=>skipped++,addEventListener:(n,fn)=>handlers[n]=fn},
 });

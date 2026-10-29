@@ -13,6 +13,7 @@ export function createCloud(fetcher = fetch) {
     return response.json();
   }
   return {
+    shortcut: phone => rpc('first_things_shortcut_setup', { account_phone: phone }),
     rename: (phone, target, name, version, requestId) => rpc('first_things_demo_rename', {
       account_phone: phone, new_phone: target, new_name: name,
       expected_version: version, request_id: requestId,
