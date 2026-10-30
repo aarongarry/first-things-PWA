@@ -50,6 +50,9 @@ let syncTimer;
 let legacyPhone = null;
 let legacyImport = null;
 let storageFailed = false;
+// Progress report: Key Results are calculated by the database (first_things_okrs)
+// from everyone's real activity. Nothing on that screen is hard-coded.
+let okr = { phase: "idle", data: null, message: "", requestId: 0 };
 function databaseStatus(phase, message = "") {
   const element = document.querySelector("#database-status");
   const labels = {
@@ -78,12 +81,15 @@ function databaseStatus(phase, message = "") {
     element.append(" ", retry);
   }
 }
+const cloud = USE_SUPABASE ? createCloud() : null;
 const accounts = createAccountStore({
   storage: loginStorage,
-  remote: USE_SUPABASE ? createCloud() : null,
+  remote: cloud,
   online: () => navigator.onLine,
   report(phone, phase, message) {
     if (phone === activePhone && !storageFailed) databaseStatus(phase, message);
+    // A sync just finished, so the Key Results may have moved.
+    if (phase === "saved" && phone === activePhone && s.screen === "progress") void refreshOkrs();
   },
   renamed(oldPhone, newPhone, snapshot) {
     if (activePhone !== oldPhone) return;
@@ -227,6 +233,7 @@ const icons = {
   unlock:
     '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 7-2M12 14v3"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  chart: '<path d="M5 20v-8M12 20V5M19 20v-5"/>',
   camera: '<path d="M3 7h4l2-3h6l2 3h4v14H3z"/><circle cx="12" cy="13" r="4"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
@@ -319,6 +326,7 @@ function go(screen) {
   s.screen = screen;
   render();
   root.scrollTop = 0;
+  if (screen === "progress") void refreshOkrs();
 }
 function today() {
   return new Date(now(s)).toLocaleDateString("en-US", {
@@ -354,6 +362,7 @@ function navigation(active) {
   return `<nav class="nav" aria-label="Main navigation">${[
     ["home", "Today", "home"],
     ["goals", "Goals", "goal"],
+    ["progress", "Progress", "chart"],
     ["chat", "George", "chat"],
     ["settings", "Settings", "settings"],
   ]
@@ -383,6 +392,7 @@ function render() {
     suggestions: suggestions,
     home: home,
     goals: goals,
+    progress: progressReport,
     chat: chat,
     settings: settings,
     locked: locked,
@@ -1025,6 +1035,90 @@ async function instagramSetup() {
   }
 }
 
+// ---- Progress report ----
+async function refreshOkrs() {
+  if (!cloud) return;
+  const mine = ++okr.requestId; // lets us ignore an older answer that arrives late
+  try {
+    const data = await cloud.okrs();
+    if (mine !== okr.requestId) return;
+    okr.data = data;
+    okr.phase = "ready";
+    okr.message = "";
+  } catch (e) {
+    if (mine !== okr.requestId) return;
+    okr.phase = "error";
+    okr.message = navigator.onLine ? e.message || String(e) : "You’re offline.";
+  }
+  paintOkrs();
+}
+// Only the report body is swapped, so the page doesn't jump or lose its scroll position.
+function paintOkrs() {
+  const el = document.querySelector("#okr-report");
+  if (el) el.innerHTML = okrBody();
+}
+// While the Progress screen is open, re-read the numbers every 10 seconds. That
+// way activity from other people's phones moves the numbers on this screen
+// without anyone touching it, which is what makes them visibly live in a demo.
+setInterval(() => {
+  if (s.screen === "progress" && !document.hidden) void refreshOkrs();
+}, 10000);
+function krCard(kr, noun) {
+  const value = Number(kr.value) || 0;
+  const target = Number(kr.target) || 1;
+  const pct = Math.min(100, Math.round((value / target) * 100)); // bar stops at 100%
+  const met = value >= target;
+  const isPercent = kr.unit === "%";
+  const shown = isPercent ? value + "%" : String(value);
+  const goal = isPercent ? target + "%" : target + " " + kr.unit;
+  // numerator/denominator are the raw counts behind the number, so anyone can see it is real data
+  const detail =
+    kr.denominator === undefined
+      ? "Average across every day someone used the app"
+      : kr.numerator + " of " + kr.denominator + " " + noun;
+  return `<article class="kr-card"><div class="kr-top"><h3>${esc(kr.title)}</h3><span class="pill${
+    met ? " met" : ""
+  }">${met ? "Target met" : "In progress"}</span></div><p class="kr-value">${esc(shown)}<small>Target ${esc(
+    goal
+  )}</small></p><div class="kr-bar" role="progressbar" aria-label="${esc(
+    kr.title
+  )}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="width:${pct}%"></i></div><p class="kr-detail">${esc(
+    detail
+  )}</p></article>`;
+}
+function okrBody() {
+  if (!cloud)
+    return '<p class="info-note">Key Results are calculated by the database. Turn on Supabase to see them.</p>';
+  if (!okr.data) {
+    return okr.phase === "error"
+      ? `<p class="error" role="alert">Couldn’t load Key Results: ${esc(okr.message)}</p>`
+      : '<p class="info-note">Loading Key Results…</p>';
+  }
+  const d = okr.data;
+  const when = new Date(d.generatedAt).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const note =
+    okr.phase === "error"
+      ? "Couldn’t refresh just now · showing " + when
+      : "Updated " + when + " · refreshes every 10 seconds";
+  return `<p class="overline-dark">OBJECTIVE 1</p><h2 class="obj-title">${esc(d.objective1.title)}</h2>${krCard(
+    d.objective1.kr1,
+    "tasks completed"
+  )}${krCard(d.objective1.kr2, "daily lists finished")}<p class="overline-dark">OBJECTIVE 2</p><h2 class="obj-title">${esc(
+    d.objective2.title
+  )}</h2>${krCard(d.objective2.kr3, "")}${krCard(
+    d.objective2.kr4,
+    "people active 3+ days this week"
+  )}<p class="okr-updated">${esc(note)}</p>`;
+}
+function progressReport() {
+  return `<section class="page progress-page"><header><span class="section-label">PROGRESS REPORT</span><h1>What First Things is doing</h1><p class="body-copy">Live numbers from everyone using the app. They move as people check off their first things.</p></header><div id="okr-report">${okrBody()}</div><button class="button secondary" data-action="okr-refresh">Refresh now</button></section>${navigation(
+    "progress"
+  )}`;
+}
 function locked() {
   const st = stats(s),
     a = apps.find((a) => a.name === s.attemptedApp) || apps[0],
@@ -1430,6 +1524,9 @@ document.addEventListener("click", async (e) => {
     render();
   }
   switch (a) {
+    case "okr-refresh":
+      void refreshOkrs();
+      break;
     case "nav":
       closeModal();
       go(el.dataset.to);

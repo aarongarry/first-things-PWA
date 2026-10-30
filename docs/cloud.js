@@ -13,6 +13,8 @@ export function createCloud(fetcher = fetch) {
     return response.json();
   }
   return {
+    // Totals for the Progress tab. Takes no phone number and returns no personal data.
+    okrs: () => rpc('first_things_okrs', {}),
     shortcut: phone => rpc('first_things_shortcut_setup', { account_phone: phone }),
     rename: (phone, target, name, version, requestId) => rpc('first_things_demo_rename', {
       account_phone: phone, new_phone: target, new_name: name,
