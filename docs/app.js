@@ -228,8 +228,7 @@ const icons = {
   goal: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/>',
   chat: '<path d="M21 11a9 9 0 0 1-9 9H4l-2 2v-10a9 9 0 1 1 19-1Z"/><path d="M7 11h10M7 15h6"/>',
   settings:
-    '<circle cx="12" cy="12" r="4"/><path d="m10 2-1 3-3 1-3-1-2 4 2 3-1 3 3 3h3l2 4h4l1-3 3-1 3 1 2-4-2-3 1-3-3-3h-3l-2-4Z"/>',
-  lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
+  '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06-1.91 1.91-.06-.06A1.65 1.65 0 0 0 16 18.4a1.65 1.65 0 0 0-1 1.52V21h-3v-1.08a1.65 1.65 0 0 0-1-1.52 1.65 1.65 0 0 0-1.82.33l-.06.06-1.91-1.91.06-.06A1.65 1.65 0 0 0 7.6 15a1.65 1.65 0 0 0-1.52-1H5v-3h1.08a1.65 1.65 0 0 0 1.52-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06 1.91-1.91.06.06A1.65 1.65 0 0 0 11 6.6a1.65 1.65 0 0 0 1-1.52V4h3v1.08a1.65 1.65 0 0 0 1 1.52 1.65 1.65 0 0 0 1.82-.33l.06-.06 1.91 1.91-.06.06A1.65 1.65 0 0 0 19.4 10a1.65 1.65 0 0 0 1.52 1H22v3h-1.08A1.65 1.65 0 0 0 19.4 15Z"/>', lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
   unlock:
     '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 7-2M12 14v3"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -946,13 +945,26 @@ function chat() {
   }>${icon("send")}</button></form></section>${navigation("chat")}`;
 }
 function settings() {
-  return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>A little more you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">${esc(
-    s.profile.name[0]?.toUpperCase()
-  )}</span><div><b>${esc(s.profile.name)}</b><small>${esc(
+  return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>A little more you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">
+  ${s.profile.avatar
+    ? `<img src="${esc(s.profile.avatar)}" alt="Profile picture" class="profile-avatar">`
+    : esc(s.profile.name[0]?.toUpperCase() || "?")
+  }
+</span><div><b>${esc(s.profile.name)}</b><small>${esc(
     s.profile.phone
   )}</small></div><button class="text-link profile-edit" data-action="profile" aria-label="Edit profile">Edit ${icon(
     "edit"
-  )}</button></div><p class="section-label">YOUR DAILY RHYTHM</p>${[
+  )}</button>
+  <label class="text-link profile-upload">
+  <input
+    type="file"
+    id="avatar-upload"
+    accept="image/png,image/jpeg,image/webp"
+    hidden
+  >
+  <span>Change Photo</span>
+</label>
+  </div><p class="section-label">YOUR DAILY RHYTHM</p>${[
     [
       "apps",
       "lock",
@@ -1943,11 +1955,32 @@ document.addEventListener("change", (e) => {
     };
     reader.readAsDataURL(file);
   }
+
+if (e.target.id === "avatar-upload") {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+  if (!allowedTypes.includes(file.type)) {
+    alert("Please choose a JPG, PNG, or WebP image.");
+    return;
+  }
+
+  if (file.size > 2 * 1024 * 1024) {
+    alert("Your profile picture must be under 2 MB.");
+    return;
+  }
+
+  console.log("Profile picture selected:", file.name);
+}
+
 });
 document.addEventListener("input", (e) => {
   if (e.target.name === "message") chatDraft = e.target.value;
 });
-document.addEventListener("submit", async (e) => {
+document.addEventListener("submit", async (e) 
+=> {
   const form = e.target;
   if (!form.dataset.form) return;
   e.preventDefault();
