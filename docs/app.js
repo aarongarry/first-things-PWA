@@ -1979,8 +1979,7 @@ if (e.target.id === "avatar-upload") {
 document.addEventListener("input", (e) => {
   if (e.target.name === "message") chatDraft = e.target.value;
 });
-document.addEventListener("submit", async (e) 
-=> {
+document.addEventListener("submit", async (e) => {
   const form = e.target;
   if (!form.dataset.form) return;
   e.preventDefault();
