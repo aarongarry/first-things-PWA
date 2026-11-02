@@ -1,0 +1,8 @@
+# Google OAuth and other secrets. Never commit these.
+.env
+.env.*
+!.env.example
+.DS_Store
+node_modules/
+supabase/.temp/
+supabase/.branches/

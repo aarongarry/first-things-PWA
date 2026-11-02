@@ -21,6 +21,7 @@ import { createCloud } from "./cloud.js";
 import { normalizePhone, accountSnapshot, applySnapshot, createAccountStore } from "./offline.js";
 import { shortcutConfig, checkInstagram } from "./shortcut.js";
 import { setupPWA } from "./pwa.js";
+import { createCalendar, deviceKey, forgetDeviceKey, moveDeviceKey, freeTime, eventTime, CALENDAR_RESULTS } from "./calendar.js";
 const root = document.querySelector("#app"),
   modal = document.querySelector("#modal");
 // Login and account data are stored separately, so signing out keeps queued edits.
@@ -41,10 +42,13 @@ let error = "",
   returnTo = "home",
   taskDraft = null,
   goalDraft = null,
-  calendarError = false,
   calendarBusy = false,
   modalVersion = 0;
 let activePhone = null;
+// Today's Google Calendar, fetched for this device only. Never synced or saved.
+const emptyCalendar = () => ({ phase: "idle", email: "", events: [], notice: "", phone: "", day: "", loadedAt: 0, loading: false });
+let cal = emptyCalendar();
+const calendarApi = USE_SUPABASE ? createCalendar() : null;
 let lastSnapshot = null;
 let syncTimer;
 let legacyPhone = null;
@@ -93,6 +97,8 @@ const accounts = createAccountStore({
   },
   renamed(oldPhone, newPhone, snapshot) {
     if (activePhone !== oldPhone) return;
+    moveDeviceKey(loginStorage, oldPhone, newPhone);
+    cal.phone = newPhone;
     activePhone = newPhone;
     applySnapshot(s, snapshot);
     lastSnapshot = accountSnapshot(s);
@@ -180,6 +186,7 @@ async function importLegacyAccount() {
 function activateAccount(phone, name = "") {
   if (accounts.read(phone)?.retired) throw Error("This account changed phone numbers. Sign in with the new number.");
   activePhone = phone;
+  cal = emptyCalendar();
   const seed = initial();
   seed.profile = { phone, name: name || "Friend" };
   seed.loginVerified = true;
@@ -197,6 +204,7 @@ function signOut() {
   root.inert = false;
   activePhone = null;
   lastSnapshot = null;
+  cal = emptyCalendar();
   s = initial();
   rememberLogin();
   closeModal();
@@ -398,6 +406,7 @@ function render() {
   };
   root.innerHTML = (map[s.screen] || home)();
   persistAccount();
+  if (["calendar", "home", "settings"].includes(s.screen)) maybeLoadCalendar();
   if (s.screen === "chat" || s.screen === "conversation")
     root.scrollTop = root.scrollHeight;
   document.querySelector("#phone-time").textContent = new Date(
@@ -528,43 +537,114 @@ function firstGoal() {
     }<button class="button">Save my first goal</button></form>`
   );
 }
+const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const duration = (ms) => {
+  const m = Math.round(ms / 60000);
+  return m >= 60 ? `${Math.floor(m / 60)} hr${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
+};
+function calendarKey(create = false) {
+  return activePhone ? deviceKey(loginStorage, activePhone, create) : null;
+}
+// Fetch today's events when a calendar screen opens. Cached for five minutes.
+function maybeLoadCalendar(force = false) {
+  if (!calendarApi || !activePhone || cal.loading || !calendarKey()) return;
+  const fresh = cal.phone === activePhone && cal.day === localDay() &&
+    Date.now() - cal.loadedAt < (cal.phase === "ready" ? 300000 : 60000);
+  if (force || !fresh) void loadCalendar();
+}
+async function loadCalendar() {
+  const phone = activePhone, key = calendarKey();
+  Object.assign(cal, { loading: true, phone, day: localDay(), loadedAt: Date.now() });
+  try {
+    const result = await calendarApi.today(phone, key);
+    if (phone !== activePhone) return;
+    if (result.connected) {
+      Object.assign(cal, { phase: "ready", email: result.email, events: result.events });
+      s.googleCalendar = true;
+    } else {
+      Object.assign(cal, { phase: "idle", email: "", events: [] });
+      // This device's key no longer opens a connection, so stop asking with it.
+      forgetDeviceKey(loginStorage, phone);
+      if (result.revoked) cal.notice = "Google Calendar access ended, so George can’t see your schedule. Connect again any time.";
+      // "elsewhere": another device still holds the connection for this account.
+      if (!result.elsewhere) s.googleCalendar = false;
+    }
+  } catch (err) {
+    if (phone !== activePhone) return;
+    if (cal.phase !== "ready") Object.assign(cal, { phase: "error", message: err.message });
+  } finally {
+    if (phone === activePhone) {
+      cal.loading = false;
+      if (["calendar", "home", "settings"].includes(s.screen) && !modal.open &&
+          !document.activeElement?.matches("input, textarea, select")) render();
+    }
+  }
+}
+function calendarSchedule() {
+  const events = cal.events.length
+    ? cal.events.map((e) => {
+        const start = eventTime(e.start), end = eventTime(e.end);
+        return `<div class="calendar-event"><b>${e.allDay ? "All day" : clock(start)}</b><span>${esc(e.title)}<small>${
+          e.allDay ? "All-day event" : duration(end - start)
+        }${e.free ? " · shows as free" : ""}</small></span></div>`;
+      }).join("")
+    : '<p class="small muted">Nothing on your calendar today.</p>';
+  // Free time from now (or 8 AM) until 10 PM, in gaps of 15 minutes or more.
+  const d = new Date();
+  const from = Math.max(Math.ceil(Date.now() / 300000) * 300000,
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8).getTime());
+  const to = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 22).getTime();
+  const gaps = from < to ? freeTime(cal.events, from, to) : [];
+  const free = gaps.length
+    ? gaps.map((g) => `<div class="calendar-event"><b>${clock(g.start)}</b><span>Free until ${clock(g.end)}<small>${duration(g.end - g.start)}</small></span></div>`).join("")
+    : '<p class="small muted">No free time left before 10 PM.</p>';
+  return `<div class="card"><p class="section-label">TODAY</p>${events}</div><div class="card"><p class="section-label">FREE TIME LEFT TODAY</p>${free}</div>`;
+}
+// Today screen: the next event, or the free time before it.
+function calendarLine() {
+  const now = Date.now();
+  const next = cal.events.find((e) => !e.allDay && !e.free && eventTime(e.end) > now);
+  if (!next) return "Nothing else on your calendar today";
+  if (eventTime(next.start) <= now) return `Now: ${esc(next.title)} · until ${clock(eventTime(next.end))}`;
+  return `Next up: ${esc(next.title)} · ${clock(eventTime(next.start))}`;
+}
 function calendar() {
+  const key = calendarKey();
+  const ready = cal.phase === "ready";
+  const checking = !ready && !!key && (cal.loading || !cal.loadedAt);
+  const failed = !ready && !!key && !checking && cal.phase === "error";
+  const elsewhere = !ready && !key && s.googleCalendar;
+  const skip = btn(s.onboarded ? "Done" : "Skip for now", "calendar-next", "ghost");
+  const disconnect = s.onboarded
+    ? btn(calendarBusy ? "Disconnecting…" : "Disconnect calendar", "calendar-disconnect", "ghost", calendarBusy ? "disabled" : "")
+    : "";
+  let body, footer;
+  if (ready) {
+    body = `<div class="success-note">✓ Connected as <b>${esc(cal.email)}</b></div>${calendarSchedule()}`;
+    footer = `${btn("Continue", "calendar-next")}${disconnect}`;
+  } else if (checking) {
+    body = '<div class="card"><p class="small muted" style="margin:0">Checking today’s calendar…</p></div>';
+    footer = skip;
+  } else if (failed) {
+    body = `<div class="error" role="alert">Couldn’t load today’s schedule. ${esc(cal.message)}</div>`;
+    footer = `${btn("Try again", "calendar-refresh")}${disconnect}${skip}`;
+  } else {
+    body = elsewhere
+      ? '<div class="info-note">Google Calendar is connected on another device. Connect on this device too to see today’s schedule here.</div>'
+      : '<div class="card row"><span class="google-g">G</span><div><b>Google Calendar</b><p class="small muted" style="margin:4px 0">Sign in with Google to see today’s events and free time here. First Things can read your events but never changes them.</p></div></div>';
+    footer = `${btn(
+      calendarBusy ? "Opening Google…" : elsewhere ? "Connect on this device" : "Connect Google Calendar",
+      "calendar-connect", "", calendarBusy ? "disabled" : ""
+    )}${elsewhere ? disconnect : ""}${skip}`;
+  }
   return step(
     "A little context<br>for your day.",
     "Connecting a calendar helps George see where a small task might fit. It’s completely optional.",
     4,
-    `<div class="calendar-illustration">${icon(
-      "calendar"
-    )}<span>Make space,<br>not more pressure.</span></div>${
-      s.calendar
-        ? `<div class="success-note">✓ Google Calendar connected in this demo</div><div class="card"><p class="section-label">SAMPLE SCHEDULE</p><div class="calendar-event"><b>10:00</b><span>Psychology lecture<small>60 minutes</small></span></div><div class="calendar-event"><b>13:30</b><span>Library study group<small>45 minutes</small></span></div><div class="calendar-event"><b>16:00</b><span>Room for a small win<small>20 minutes free</small></span></div></div>`
-        : `<div class="card row"><span class="google-g">G</span><div><b>Google Calendar</b><p class="small muted" style="margin:4px 0">A simulated connection.<br>No sign-in or real calendar access.</p></div></div>`
-    }${
-      calendarError
-        ? '<div class="error" role="alert">The calendar couldn’t connect. Your setup is saved. Try again, or continue without it.</div>'
-        : ""
+    `<div class="calendar-illustration">${icon("calendar")}<span>Make space,<br>not more pressure.</span></div>${body}${
+      cal.notice ? `<div class="error" role="alert">${esc(cal.notice)}</div>` : ""
     }`,
-    s.calendar
-      ? `${btn("Continue", "calendar-next")}${
-          s.onboarded
-            ? btn("Disconnect calendar", "calendar-disconnect", "ghost")
-            : ""
-        }`
-      : `${btn(
-          calendarBusy ? "Connecting…" : "Connect Google Calendar",
-          "calendar-connect",
-          "",
-          calendarBusy ? "disabled" : ""
-        )}${btn(
-          s.onboarded ? "Done" : "Skip for now",
-          "calendar-next",
-          "ghost"
-        )}${btn(
-          "Demo: simulate connection failure",
-          "calendar-fail",
-          "ghost",
-          calendarBusy ? "disabled" : ""
-        )}`
+    footer
   );
 }
 function appSelection() {
@@ -799,10 +879,8 @@ function home() {
   )} Add a little first thing</button><button class="george-home" data-action="nav" data-to="chat">${avatar()}<span><b>Big task on your mind?</b><small>Let’s find a small place to start.</small></span>${icon(
     "chat"
   )}</button>${
-    s.calendar
-      ? '<div class="calendar-mini">' +
-        icon("calendar") +
-        ' Next up: library study group · 1:30 PM <span class="pill">DEMO</span></div>'
+    s.googleCalendar && cal.phase === "ready"
+      ? '<div class="calendar-mini">' + icon("calendar") + " " + calendarLine() + "</div>"
       : ""
   }<p class="day-note">A new day starts at midnight. <button data-action="day-rules">How it works</button></p></section>${navigation(
     "home"
@@ -981,8 +1059,8 @@ function settings() {
       "calendar",
       "calendar",
       "Calendar connection",
-      s.calendar
-        ? "Connected · simulated Google Calendar"
+      s.googleCalendar
+        ? cal.phase === "ready" ? `Connected · ${esc(cal.email)}` : "Connected · Google Calendar"
         : "Optional · not connected",
     ],
   ]
@@ -1019,7 +1097,7 @@ EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${ic
     "spark"
   )}<span><b>Demo controls</b><small>Explore resets and recovery states</small></span><span>›</span></button><button class="setting-row" data-action="day-rules">${icon(
     "clock"
-  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>AI, calendars, and photos are simulated. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
+  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>AI and photos are simulated. Google Calendar is optional and read-only. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
     "settings"
   )}`;
 }
@@ -1635,28 +1713,54 @@ document.addEventListener("click", async (e) => {
     case "goal-example":
       document.querySelector("[name=title]").value = v;
       break;
-    case "calendar-connect":
-    case "calendar-fail":
+    case "calendar-connect": {
+      cal.notice = "";
+      if (!calendarApi) { cal.notice = "Calendar connection needs the cloud setup. Continue without it for now."; render(); break; }
+      if (!navigator.onLine) { cal.notice = "Connect to the internet to link Google Calendar, or continue without it."; render(); break; }
       calendarBusy = true;
-      calendarError = false;
       render();
-      setTimeout(() => {
+      try {
+        // The server finds the account by number, so it must exist in the cloud.
+        persistAccount();
+        await accounts.sync(activePhone);
+        const key = calendarKey(true);
+        if (!key) throw Error("This browser can’t save the calendar link. Allow website data and try again.");
+        const url = await calendarApi.start(activePhone, key, location.origin + location.pathname);
+        persistAccount();
+        location.assign(url);
+      } catch (err) {
         calendarBusy = false;
-        calendarError = a === "calendar-fail";
-        s.calendar = !calendarError;
+        cal.notice = err.message;
         render();
-        if (s.calendar) toast("Your sample calendar is connected.");
-      }, 800);
+      }
+      break;
+    }
+    case "calendar-refresh":
+      cal.notice = "";
+      maybeLoadCalendar(true);
+      render();
       break;
     case "calendar-next":
-      calendarError = false;
+      cal.notice = "";
       go(s.onboarded ? "settings" : "apps");
       break;
-    case "calendar-disconnect":
-      s.calendar = false;
+    case "calendar-disconnect": {
+      calendarBusy = true;
       render();
-      toast("Calendar disconnected. Your tasks are unchanged.");
+      try {
+        if (calendarApi) await calendarApi.disconnect(activePhone, calendarKey());
+        forgetDeviceKey(loginStorage, activePhone);
+        cal = { ...emptyCalendar(), phone: activePhone };
+        s.googleCalendar = false;
+        toast("Google Calendar disconnected. Your tasks are unchanged.");
+      } catch (err) {
+        cal.notice = err.message;
+      } finally {
+        calendarBusy = false;
+        render();
+      }
       break;
+    }
     case "toggle-app":
       s.selectedApps = s.selectedApps.includes(v)
         ? s.selectedApps.filter((x) => x !== v)
@@ -2245,6 +2349,30 @@ if (s.loginVerified) {
   catch { s = initial(); rememberLogin(); }
 }
 setupPWA({ beforeUpdate: () => { persistAccount(); return !storageFailed; } });
+// Google sends people back with ?calendar=connected|denied|missing|error.
+const calendarResult = new URL(location.href).searchParams.get("calendar");
+if (calendarResult) {
+  const cleanURL = new URL(location.href);
+  cleanURL.searchParams.delete("calendar");
+  history.replaceState(null, "", cleanURL);
+  if (s.loginVerified && activePhone) {
+    // Reloading would restart onboarding, so resume on the calendar step.
+    s.screen = "calendar";
+    if (calendarResult === "connected") toast("Google Calendar connected.");
+    else cal.notice = CALENDAR_RESULTS[calendarResult] || CALENDAR_RESULTS.error;
+  } else {
+    // On iPhone, Google may return to Safari instead of the Home Screen app.
+    openModal("Back to First Things", `<p>${calendarResult === "connected"
+      ? "Your Google Calendar is connected."
+      : "Google Calendar wasn’t connected."} Switch back to your First Things Home Screen app to continue.</p><button class="button" data-action="close-modal">Got it</button>`);
+  }
+}
+// Returning from Google in another window: check again when this one is seen.
+const recheckCalendar = () => { if (!document.hidden && s.screen === "calendar" && cal.phase !== "ready") maybeLoadCalendar(true); };
+window.addEventListener("focus", recheckCalendar);
+document.addEventListener("visibilitychange", recheckCalendar);
+// Back-button return from Google restores this page from cache with the busy state.
+window.addEventListener("pageshow", (e) => { if (e.persisted && calendarBusy) { calendarBusy = false; render(); } });
 render();
 syncAccounts();
 updateTimers();
