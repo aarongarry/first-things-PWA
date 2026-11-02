@@ -227,10 +227,8 @@ const icons = {
   home: '<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/>',
   goal: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/>',
   chat: '<path d="M21 11a9 9 0 0 1-9 9H4l-2 2v-10a9 9 0 1 1 19-1Z"/><path d="M7 11h10M7 15h6"/>',
-  settings:
-    '<circle cx="12" cy="12" r="4"/><path d="m10 2-1 3-3 1-3-1-2 4 2 3-1 3 3 3h3l2 4h4l1-3 3-1 3 1 2-4-2-3 1-3-3-3h-3l-2-4Z"/>',
-  lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
-  unlock:
+settings: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
+unlock:
     '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 7-2M12 14v3"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   chart: '<path d="M5 20v-8M12 20V5M19 20v-5"/>',
@@ -946,13 +944,26 @@ function chat() {
   }>${icon("send")}</button></form></section>${navigation("chat")}`;
 }
 function settings() {
-  return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>A little more you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">${esc(
-    s.profile.name[0]?.toUpperCase()
-  )}</span><div><b>${esc(s.profile.name)}</b><small>${esc(
+  return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>A little more you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">
+  ${s.profile.avatar
+    ? `<img src="${esc(s.profile.avatar)}" alt="Profile picture" class="profile-avatar">`
+    : esc(s.profile.name[0]?.toUpperCase() || "?")
+  }
+</span><div><b>${esc(s.profile.name)}</b><small>${esc(
     s.profile.phone
   )}</small></div><button class="text-link profile-edit" data-action="profile" aria-label="Edit profile">Edit ${icon(
     "edit"
-  )}</button></div><p class="section-label">YOUR DAILY RHYTHM</p>${[
+  )}</button>
+  <label class="text-link profile-upload">
+  <input
+    type="file"
+    id="avatar-upload"
+    accept="image/png,image/jpeg,image/webp"
+    hidden
+  >
+  <span>Change Photo</span>
+</label>
+  </div><p class="section-label">YOUR DAILY RHYTHM</p>${[
     [
       "apps",
       "lock",
@@ -983,7 +994,24 @@ function settings() {
     )
     .join(
       ""
-    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>Instagram shortcut</b><small>Set up your iPhone reminder</small></span><span>›</span></button><p class="section-label" style="margin-top:27px">EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
+    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>Instagram shortcut</b><small>Set up your iPhone reminder</small></span><span>›</span></button><p class="section-label" style="margin-top:27px">
+    <button class="setting-row" data-action="share-app">
+  ${icon("send")}
+  <span>
+    <b>Share with Friends</b>
+    <small>Invite someone to try First Things</small>
+  </span>
+  <span>›</span>
+</button>
+<button class="setting-row" data-action="copy-app-link">
+  ${icon("check")}
+  <span>
+    <b>Copy Link</b>
+    <small>Copy the app link to send anywhere</small>
+  </span>
+  <span>›</span>
+</button>
+EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
     "phone"
   )}<span><b>Try a distracting app</b><small>See why it’s paused or unlocked</small></span><span>›</span></button><button class="setting-row" data-action="lockscreen">${icon(
     "lock"
@@ -1524,6 +1552,42 @@ document.addEventListener("click", async (e) => {
     render();
   }
   switch (a) {
+    case "copy-app-link": {
+  const shareUrl = "https://aarongarry.github.io/first-things-PWA/";
+
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    toast("Link copied! Send it to a friend.");
+  } catch {
+    toast("Couldn't copy the link.");
+  }
+  break;
+}
+    case "share-app": {
+  const shareUrl = "https://aarongarry.github.io/first-things-PWA/";
+
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: "First Things",
+        text: "Check out First Things! It's an app that helps you focus on your goals.",
+        url: shareUrl
+      });
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        toast("Couldn't open sharing options.");
+      }
+    }
+  } else {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      toast("App link copied! Send it to a friend.");
+    } catch {
+      toast("Couldn't copy the link.");
+    }
+  }
+  break;
+}
     case "okr-refresh":
       void refreshOkrs();
       break;
@@ -1943,6 +2007,26 @@ document.addEventListener("change", (e) => {
     };
     reader.readAsDataURL(file);
   }
+
+if (e.target.id === "avatar-upload") {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+
+  if (!allowedTypes.includes(file.type)) {
+    alert("Please choose a JPG, PNG, or WebP image.");
+    return;
+  }
+
+  if (file.size > 2 * 1024 * 1024) {
+    alert("Your profile picture must be under 2 MB.");
+    return;
+  }
+
+  console.log("Profile picture selected:", file.name);
+}
+
 });
 document.addEventListener("input", (e) => {
   if (e.target.name === "message") chatDraft = e.target.value;
