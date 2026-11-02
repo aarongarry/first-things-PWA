@@ -1,6 +1,6 @@
 // Google Calendar connection. Google tokens stay inside the google-calendar Edge
 // Function; this device keeps only a random key that proves it connected.
-import { SUPABASE_URL, SUPABASE_KEY } from './supabase-config.js';
+import { SUPABASE_URL } from './supabase-config.js';
 
 export const CALENDAR_KEY_PREFIX = 'first-things-calendar-key-v1:';
 export const CALENDAR_FUNCTION_URL = `${SUPABASE_URL}/functions/v1/google-calendar`;
@@ -77,15 +77,19 @@ export function createCalendar(fetcher = fetch) {
   async function call(body) {
     let response, result = null;
     try {
+      // A text/plain POST with no custom headers skips the CORS preflight, so a
+      // missing function shows up as a readable 404 instead of a network error.
       response = await fetcher(CALENDAR_FUNCTION_URL, {
-        method: 'POST', headers: { apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
         body: JSON.stringify(body), cache: 'no-store', signal: AbortSignal.timeout(15000),
       });
       result = await response.json();
     } catch { /* Handled below. */ }
-    if (!response?.ok || !result || typeof result !== 'object')
-      throw Error(result?.error || 'Google Calendar is unavailable right now. Check your connection and try again.');
-    return result;
+    if (response?.ok && result && typeof result === 'object') return result;
+    if (typeof result?.error === 'string' && response?.status !== 404) throw Error(result.error);
+    if (response?.status === 404) throw Error('Calendar connection isn’t set up on the server yet. You can continue without it.');
+    if (response) throw Error('The calendar service had a problem. Try again soon, or continue without it.');
+    throw Error('Google Calendar is unavailable right now. Check your connection and try again.');
   }
   return {
     async start(phone, key, returnTo) {

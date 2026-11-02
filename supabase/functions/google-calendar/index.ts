@@ -44,4 +44,15 @@ const db = {
   },
 };
 
-Deno.serve(createHandler({ env: Deno.env.toObject(), db, fetch }));
+let handler: (request: Request) => Promise<Response>;
+try {
+  handler = createHandler({ env: Deno.env.toObject(), db, fetch });
+} catch (error) {
+  // Missing secrets: answer readably so the app and logs say what to fix.
+  console.error(error);
+  handler = async () => new Response(
+    JSON.stringify({ error: "Calendar connection isn’t finished setting up. You can continue without it." }),
+    { status: 503, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } },
+  );
+}
+Deno.serve(handler);

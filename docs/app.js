@@ -48,6 +48,7 @@ let activePhone = null;
 // Today's Google Calendar, fetched for this device only. Never synced or saved.
 const emptyCalendar = () => ({ phase: "idle", email: "", events: [], notice: "", phone: "", day: "", loadedAt: 0, loading: false });
 let cal = emptyCalendar();
+let hadCalendarKey = false;
 const calendarApi = USE_SUPABASE ? createCalendar() : null;
 let lastSnapshot = null;
 let syncTimer;
@@ -1723,12 +1724,16 @@ document.addEventListener("click", async (e) => {
         // The server finds the account by number, so it must exist in the cloud.
         persistAccount();
         await accounts.sync(activePhone);
+        hadCalendarKey = !!calendarKey();
         const key = calendarKey(true);
         if (!key) throw Error("This browser can’t save the calendar link. Allow website data and try again.");
         const url = await calendarApi.start(activePhone, key, location.origin + location.pathname);
         persistAccount();
         location.assign(url);
       } catch (err) {
+        // A key made for this attempt was never registered; drop it so the page
+        // shows the real error instead of trying to load a schedule.
+        if (!hadCalendarKey) forgetDeviceKey(loginStorage, activePhone);
         calendarBusy = false;
         cal.notice = err.message;
         render();

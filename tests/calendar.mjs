@@ -167,6 +167,9 @@ console.log('PASS revoked Google access and in-app disconnect');
   const api = createCalendar(async (url, options) => {
     assert.equal(url, CALENDAR_FUNCTION_URL);
     assert.equal(options.cache, 'no-store');
+    // A "simple" request: no preflight, so gateway errors stay readable.
+    assert.deepEqual(Object.keys(options.headers), ['Content-Type']);
+    assert.match(options.headers['Content-Type'], /^text\/plain/);
     const body = JSON.parse(options.body); sent.push(body);
     if (body.action === 'start') return Response.json({ url: 'https://accounts.google.com/o/oauth2/v2/auth?x=1' });
     if (body.action === 'today') return Response.json({ connected: true, email: 'you@gmail.com', events: [] });
@@ -181,6 +184,10 @@ console.log('PASS revoked Google access and in-app disconnect');
   await assert.rejects(createCalendar(async () => Response.json({ url: 'https://evil.test/' })).start(PHONE, key, APP), /couldn’t start/);
   await assert.rejects(createCalendar(async () => Response.json({ error: 'Wait for sync' }, { status: 409 })).start(PHONE, key, APP), /Wait for sync/);
   await assert.rejects(createCalendar(async () => { throw Error('offline'); }).today(PHONE, key), /unavailable/);
+  const notFound = async () => Response.json({ code: 'NOT_FOUND', message: 'Requested function was not found' }, { status: 404 });
+  await assert.rejects(createCalendar(notFound).start(PHONE, key, APP), /isn’t set up on the server yet/);
+  await assert.rejects(createCalendar(async () => new Response('boom', { status: 502 })).today(PHONE, key), /had a problem/);
+  await assert.rejects(createCalendar(async () => Response.json({ error: 'Calendar connection isn’t finished setting up.' }, { status: 503 })).today(PHONE, key), /finished setting up/);
   assert.equal(typeof dayRange().timeZone, 'string');
 
   const at = (h, m = 0) => new Date(2026, 10, 1, h, m).getTime();
