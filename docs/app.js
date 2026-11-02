@@ -613,7 +613,10 @@ function calendar() {
   const key = calendarKey();
   const ready = cal.phase === "ready";
   const checking = !ready && !!key && (cal.loading || !cal.loadedAt);
-  const failed = !ready && !!key && !checking && cal.phase === "error";
+  const loadError = !ready && !!key && !checking && cal.phase === "error";
+  // Only an account already confirmed connected gets the "couldn't load" screen.
+  // Otherwise (e.g. a key left by an attempt that never finished) offer Connect.
+  const failed = loadError && s.googleCalendar;
   const elsewhere = !ready && !key && s.googleCalendar;
   const skip = btn(s.onboarded ? "Done" : "Skip for now", "calendar-next", "ghost");
   const disconnect = s.onboarded
@@ -643,7 +646,9 @@ function calendar() {
     "Connecting a calendar helps George see where a small task might fit. It’s completely optional.",
     4,
     `<div class="calendar-illustration">${icon("calendar")}<span>Make space,<br>not more pressure.</span></div>${body}${
-      cal.notice ? `<div class="error" role="alert">${esc(cal.notice)}</div>` : ""
+      cal.notice || (loadError && !failed)
+        ? `<div class="error" role="alert">${esc(cal.notice || cal.message)}</div>`
+        : ""
     }`,
     footer
   );
