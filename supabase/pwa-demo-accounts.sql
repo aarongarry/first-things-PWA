@@ -91,7 +91,7 @@ begin
     return jsonb_build_object('taken', true);
   end if;
   if source.version is distinct from expected_version then return jsonb_build_object('conflict', true); end if;
-  next_state := jsonb_set(source.state, '{profile}', jsonb_build_object('phone', new_phone, 'name', trim(new_name)));
+  next_state := jsonb_set(source.state, '{profile}', coalesce(source.state->'profile', '{}'::jsonb) || jsonb_build_object('phone', new_phone, 'name', trim(new_name)));
   insert into public.first_things_demo_accounts(phone, state, version, identity_id)
     values(new_phone, next_state, source.version + 1, source.identity_id)
     on conflict(phone) do update set state = excluded.state, version = excluded.version,
