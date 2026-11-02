@@ -227,7 +227,7 @@ const icons = {
   home: '<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/>',
   goal: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/>',
   chat: '<path d="M21 11a9 9 0 0 1-9 9H4l-2 2v-10a9 9 0 1 1 19-1Z"/><path d="M7 11h10M7 15h6"/>',
-settings: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
+settings: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
 unlock:
     '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 7-2M12 14v3"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -308,6 +308,24 @@ const apps = [
     desc: "Catch up after a small win",
   },
 ];
+function resizeAvatar(file, size = 256) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      if (!side) return reject(Error("empty image"));
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(Error("bad image")); };
+    img.src = url;
+  });
+}
 function toast(message) {
   clearTimeout(toastTimer);
   const el = document.querySelector("#toast");
@@ -838,10 +856,33 @@ function taskRow(t) {
     t.id
   }" aria-label="Edit ${esc(t.title)}">${icon("more")}</button></div>`;
 }
+const DAY_MS = 86400000;
+const dayNumber = (day) => Math.round(new Date(day + "T12:00:00").getTime() / DAY_MS);
+function goalMeta(g, associated) {
+  const todayKey = localDay(now(s));
+  const left = dayNumber(g.target) - dayNumber(todayKey);
+  const tone = left < 0 ? "over" : left <= 7 ? "soon" : "ok";
+  const label =
+    left < 0 ? `Overdue by ${-left} day${left === -1 ? "" : "s"}`
+    : left === 0 ? "Due today"
+    : left === 1 ? "1 day left"
+    : `${left} days left`;
+  const done = associated.filter((t) => t.done).length;
+  const todayPct = associated.length ? Math.round((done / associated.length) * 100) : 0;
+  let timeBar = "";
+  if (g.created) {
+    const span = Math.max(1, dayNumber(g.target) - dayNumber(g.created));
+    const pct = Math.max(0, Math.min(100, Math.round(((dayNumber(todayKey) - dayNumber(g.created)) / span) * 100)));
+    timeBar = `<div class="goal-bar"><div class="goal-bar-head"><span>Time passed</span><b>${pct}%</b></div><div class="goal-track"><i class="time ${tone}" style="width:${pct}%"></i></div></div>`;
+  }
+  const finished = g.stepsDone || 0;
+  return `<div class="goal-due"><span class="due-pill ${tone}">${icon("calendar")} ${label}</span><span class="small muted">Target ${dateText(g.target)}</span></div>${timeBar}<div class="goal-bar"><div class="goal-bar-head"><span>Today’s steps</span><b>${done} of ${associated.length}</b></div><div class="goal-track"><i style="width:${todayPct}%"></i></div></div><p class="goal-total">${finished ? `<b>${finished}</b> step${finished === 1 ? "" : "s"} finished toward this goal` : "Finish a step to start your count"}</p>`;
+}
 function goals() {
+  const totalSteps = s.goals.reduce((n, g) => n + (g.stepsDone || 0), 0);
   return `<section class="page"><div class="page-top"><span class="section-label">THE BIGGER PICTURE</span><button class="icon-btn blue" data-action="new-goal" aria-label="Add goal">${icon(
     "plus"
-  )}</button></div><h1>Things worth<br>working toward<span class="blue">.</span></h1><p class="body-copy">Your daily steps have somewhere to go.</p>${
+  )}</button></div><h1>Things worth<br>working toward<span class="blue">.</span></h1><p class="body-copy">${totalSteps ? `${totalSteps} step${totalSteps === 1 ? "" : "s"} finished across your goals.` : "Your daily steps have somewhere to go."}</p>${
     s.goals.length
       ? s.goals
           .map((g, i) => {
@@ -854,21 +895,7 @@ function goals() {
               "edit"
             )}</button></div><h2>${esc(
               g.title
-            )}</h2><div class="small muted">${icon(
-              "calendar"
-            )} Target: ${dateText(
-              g.target
-            )}</div><div class="goal-progress"><span>${
-              associated.filter((t) => t.done).length
-            } of ${
-              associated.length
-            } associated tasks done today</span><div><i style="width:${
-              associated.length
-                ? (associated.filter((t) => t.done).length /
-                    associated.length) *
-                  100
-                : 0
-            }%"></i></div></div><button class="button secondary" data-action="goal-steps" data-id="${
+            )}</h2>${goalMeta(g, associated)}<button class="button secondary" data-action="goal-steps" data-id="${
               g.id
             }">${icon("spark")} Ask George for next steps</button>${
               associated.length
@@ -954,13 +981,8 @@ function settings() {
   )}</small></div><button class="text-link profile-edit" data-action="profile" aria-label="Edit profile">Edit ${icon(
     "edit"
   )}</button>
-  <label class="text-link profile-upload">
-  <input
-    type="file"
-    id="avatar-upload"
-    accept="image/png,image/jpeg,image/webp"
-    hidden
-  >
+  <label for="avatar-upload" class="text-link profile-upload">
+  <input type="file" id="avatar-upload" accept="image/png,image/jpeg,image/webp" style="display:none;">
   <span>Change Photo</span>
 </label>
   </div><p class="section-label">YOUR DAILY RHYTHM</p>${[
@@ -1715,6 +1737,8 @@ document.addEventListener("click", async (e) => {
       const t = s.tasks.find((t) => t.id === id);
       if (t.done) {
         t.done = false;
+        const owner = s.goals.find((g) => g.id === t.goalId);
+        if (owner && owner.stepsDone > 0) owner.stepsDone--;
         reconcile(s);
         render();
         toast(
@@ -2009,22 +2033,35 @@ document.addEventListener("change", (e) => {
   }
 
 if (e.target.id === "avatar-upload") {
-  const file = e.target.files?.[0];
+  const input = e.target;
+  const file = input.files?.[0];
   if (!file) return;
-
-  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-
-  if (!allowedTypes.includes(file.type)) {
-    alert("Please choose a JPG, PNG, or WebP image.");
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    toast("Please choose a JPG, PNG, or WebP image.");
+    input.value = "";
     return;
   }
-
-  if (file.size > 2 * 1024 * 1024) {
-    alert("Your profile picture must be under 2 MB.");
+  if (file.size > 8 * 1024 * 1024) {
+    toast("Choose a picture under 8 MB.");
+    input.value = "";
     return;
   }
-
-  console.log("Profile picture selected:", file.name);
+  resizeAvatar(file)
+    .then((dataUrl) => {
+      const previous = s.profile.avatar;
+      s.profile.avatar = dataUrl;
+      persistAccount();
+      if (storageFailed) {
+        if (previous) s.profile.avatar = previous;
+        else delete s.profile.avatar;
+        toast("Your picture couldn’t be saved. Free some device storage and try again.");
+        return;
+      }
+      render();
+      toast("Profile picture updated.");
+    })
+    .catch(() => toast("That image couldn’t be opened. Please try another."))
+    .finally(() => { input.value = ""; });
 }
 
 });
@@ -2087,6 +2124,8 @@ document.addEventListener("submit", async (e) => {
           id: s.goals[0]?.id || uid(),
           title: values.title.trim(),
           target: values.target,
+          created: s.goals[0]?.created || localDay(now(s)),
+          stepsDone: s.goals[0]?.stepsDone || 0,
         },
       ];
       go("calendar");
@@ -2146,6 +2185,8 @@ document.addEventListener("submit", async (e) => {
           id: uid(),
           title: values.title.trim(),
           target: values.target,
+          created: localDay(now(s)),
+          stepsDone: 0,
         });
       closeModal();
       render();
@@ -2173,7 +2214,7 @@ document.addEventListener("submit", async (e) => {
           save.textContent = "Save profile";
         }
       } else {
-        s.profile = { name, phone: activePhone };
+        s.profile = { ...s.profile, name, phone: activePhone };
         persistAccount();
         if (storageFailed) { fail("Your profile couldn’t be saved. Free some device storage and try again."); break; }
         closeModal();

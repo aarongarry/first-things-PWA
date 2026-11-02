@@ -139,7 +139,7 @@ export function createAccountStore({ storage, remote, online = () => true, repor
     if (!move) throw Error('No phone change is pending.');
     const result = remote ? await remote.rename(phone, move.phone, move.name, record.version, move.id) : {
       version: record.version + 1,
-      state: { ...copy(record.local), profile: { phone: move.phone, name: move.name } },
+      state: { ...copy(record.local), profile: { ...record.local.profile, phone: move.phone, name: move.name } },
     };
     if (result.taken || result.conflict || result.retired) {
       delete record.pendingMove;
