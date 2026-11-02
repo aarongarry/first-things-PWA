@@ -50,6 +50,9 @@ let syncTimer;
 let legacyPhone = null;
 let legacyImport = null;
 let storageFailed = false;
+// Progress report: Key Results are calculated by the database (first_things_okrs)
+// from everyone's real activity. Nothing on that screen is hard-coded.
+let okr = { phase: "idle", data: null, message: "", requestId: 0 };
 function databaseStatus(phase, message = "") {
   const element = document.querySelector("#database-status");
   const labels = {
@@ -78,12 +81,15 @@ function databaseStatus(phase, message = "") {
     element.append(" ", retry);
   }
 }
+const cloud = USE_SUPABASE ? createCloud() : null;
 const accounts = createAccountStore({
   storage: loginStorage,
-  remote: USE_SUPABASE ? createCloud() : null,
+  remote: cloud,
   online: () => navigator.onLine,
   report(phone, phase, message) {
     if (phone === activePhone && !storageFailed) databaseStatus(phase, message);
+    // A sync just finished, so the Key Results may have moved.
+    if (phase === "saved" && phone === activePhone && s.screen === "progress") void refreshOkrs();
   },
   renamed(oldPhone, newPhone, snapshot) {
     if (activePhone !== oldPhone) return;
@@ -221,12 +227,11 @@ const icons = {
   home: '<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/>',
   goal: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/>',
   chat: '<path d="M21 11a9 9 0 0 1-9 9H4l-2 2v-10a9 9 0 1 1 19-1Z"/><path d="M7 11h10M7 15h6"/>',
-  settings:
-    '<circle cx="12" cy="12" r="4"/><path d="m10 2-1 3-3 1-3-1-2 4 2 3-1 3 3 3h3l2 4h4l1-3 3-1 3 1 2-4-2-3 1-3-3-3h-3l-2-4Z"/>',
-  lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
-  unlock:
+settings: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
+unlock:
     '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 7-2M12 14v3"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  chart: '<path d="M5 20v-8M12 20V5M19 20v-5"/>',
   camera: '<path d="M3 7h4l2-3h6l2 3h4v14H3z"/><circle cx="12" cy="13" r="4"/>',
   more: '<circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/>',
   close: '<path d="m6 6 12 12M6 18 18 6"/>',
@@ -303,6 +308,24 @@ const apps = [
     desc: "Catch up after a small win",
   },
 ];
+function resizeAvatar(file, size = 256) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      if (!side) return reject(Error("empty image"));
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(Error("bad image")); };
+    img.src = url;
+  });
+}
 function toast(message) {
   clearTimeout(toastTimer);
   const el = document.querySelector("#toast");
@@ -319,6 +342,7 @@ function go(screen) {
   s.screen = screen;
   render();
   root.scrollTop = 0;
+  if (screen === "progress") void refreshOkrs();
 }
 function today() {
   return new Date(now(s)).toLocaleDateString("en-US", {
@@ -354,6 +378,7 @@ function navigation(active) {
   return `<nav class="nav" aria-label="Main navigation">${[
     ["home", "Today", "home"],
     ["goals", "Goals", "goal"],
+    ["progress", "Progress", "chart"],
     ["chat", "George", "chat"],
     ["settings", "Settings", "settings"],
   ]
@@ -383,6 +408,7 @@ function render() {
     suggestions: suggestions,
     home: home,
     goals: goals,
+    progress: progressReport,
     chat: chat,
     settings: settings,
     locked: locked,
@@ -830,10 +856,33 @@ function taskRow(t) {
     t.id
   }" aria-label="Edit ${esc(t.title)}">${icon("more")}</button></div>`;
 }
+const DAY_MS = 86400000;
+const dayNumber = (day) => Math.round(new Date(day + "T12:00:00").getTime() / DAY_MS);
+function goalMeta(g, associated) {
+  const todayKey = localDay(now(s));
+  const left = dayNumber(g.target) - dayNumber(todayKey);
+  const tone = left < 0 ? "over" : left <= 7 ? "soon" : "ok";
+  const label =
+    left < 0 ? `Overdue by ${-left} day${left === -1 ? "" : "s"}`
+    : left === 0 ? "Due today"
+    : left === 1 ? "1 day left"
+    : `${left} days left`;
+  const done = associated.filter((t) => t.done).length;
+  const todayPct = associated.length ? Math.round((done / associated.length) * 100) : 0;
+  let timeBar = "";
+  if (g.created) {
+    const span = Math.max(1, dayNumber(g.target) - dayNumber(g.created));
+    const pct = Math.max(0, Math.min(100, Math.round(((dayNumber(todayKey) - dayNumber(g.created)) / span) * 100)));
+    timeBar = `<div class="goal-bar"><div class="goal-bar-head"><span>Time passed</span><b>${pct}%</b></div><div class="goal-track"><i class="time ${tone}" style="width:${pct}%"></i></div></div>`;
+  }
+  const finished = g.stepsDone || 0;
+  return `<div class="goal-due"><span class="due-pill ${tone}">${icon("calendar")} ${label}</span><span class="small muted">Target ${dateText(g.target)}</span></div>${timeBar}<div class="goal-bar"><div class="goal-bar-head"><span>Today’s steps</span><b>${done} of ${associated.length}</b></div><div class="goal-track"><i style="width:${todayPct}%"></i></div></div><p class="goal-total">${finished ? `<b>${finished}</b> step${finished === 1 ? "" : "s"} finished toward this goal` : "Finish a step to start your count"}</p>`;
+}
 function goals() {
+  const totalSteps = s.goals.reduce((n, g) => n + (g.stepsDone || 0), 0);
   return `<section class="page"><div class="page-top"><span class="section-label">THE BIGGER PICTURE</span><button class="icon-btn blue" data-action="new-goal" aria-label="Add goal">${icon(
     "plus"
-  )}</button></div><h1>Things worth<br>working toward<span class="blue">.</span></h1><p class="body-copy">Your daily steps have somewhere to go.</p>${
+  )}</button></div><h1>Things worth<br>working toward<span class="blue">.</span></h1><p class="body-copy">${totalSteps ? `${totalSteps} step${totalSteps === 1 ? "" : "s"} finished across your goals.` : "Your daily steps have somewhere to go."}</p>${
     s.goals.length
       ? s.goals
           .map((g, i) => {
@@ -846,21 +895,7 @@ function goals() {
               "edit"
             )}</button></div><h2>${esc(
               g.title
-            )}</h2><div class="small muted">${icon(
-              "calendar"
-            )} Target: ${dateText(
-              g.target
-            )}</div><div class="goal-progress"><span>${
-              associated.filter((t) => t.done).length
-            } of ${
-              associated.length
-            } associated tasks done today</span><div><i style="width:${
-              associated.length
-                ? (associated.filter((t) => t.done).length /
-                    associated.length) *
-                  100
-                : 0
-            }%"></i></div></div><button class="button secondary" data-action="goal-steps" data-id="${
+            )}</h2>${goalMeta(g, associated)}<button class="button secondary" data-action="goal-steps" data-id="${
               g.id
             }">${icon("spark")} Ask George for next steps</button>${
               associated.length
@@ -936,13 +971,21 @@ function chat() {
   }>${icon("send")}</button></form></section>${navigation("chat")}`;
 }
 function settings() {
-  return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>A little more you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">${esc(
-    s.profile.name[0]?.toUpperCase()
-  )}</span><div><b>${esc(s.profile.name)}</b><small>${esc(
+  return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>A little more you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">
+  ${s.profile.avatar
+    ? `<img src="${esc(s.profile.avatar)}" alt="Profile picture" class="profile-avatar">`
+    : esc(s.profile.name[0]?.toUpperCase() || "?")
+  }
+</span><div><b>${esc(s.profile.name)}</b><small>${esc(
     s.profile.phone
   )}</small></div><button class="text-link profile-edit" data-action="profile" aria-label="Edit profile">Edit ${icon(
     "edit"
-  )}</button></div><p class="section-label">YOUR DAILY RHYTHM</p>${[
+  )}</button>
+  <label for="avatar-upload" class="text-link profile-upload">
+  <input type="file" id="avatar-upload" accept="image/png,image/jpeg,image/webp" style="display:none;">
+  <span>Change Photo</span>
+</label>
+  </div><p class="section-label">YOUR DAILY RHYTHM</p>${[
     [
       "apps",
       "lock",
@@ -973,7 +1016,24 @@ function settings() {
     )
     .join(
       ""
-    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>App shortcuts</b><small>Set up your iPhone reminder</small></span><span>›</span></button><p class="section-label" style="margin-top:27px">EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
+    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>App shortcuts</b><small>Set up your iPhone reminder</small></span><span>›</span></button>
+    <button class="setting-row" data-action="share-app">
+  ${icon("send")}
+  <span>
+    <b>Share with Friends</b>
+    <small>Invite someone to try First Things</small>
+  </span>
+  <span>›</span>
+</button>
+<button class="setting-row" data-action="copy-app-link">
+  ${icon("check")}
+  <span>
+    <b>Copy Link</b>
+    <small>Copy the app link to send anywhere</small>
+  </span>
+  <span>›</span>
+</button>
+<p class="section-label" style="margin-top:27px">EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
     "phone"
   )}<span><b>Try a distracting app</b><small>See why it’s paused or unlocked</small></span><span>›</span></button><button class="setting-row" data-action="lockscreen">${icon(
     "lock"
@@ -1034,6 +1094,90 @@ async function instagramSetup(appName = "Instagram") {
   }
 }
 
+// ---- Progress report ----
+async function refreshOkrs() {
+  if (!cloud) return;
+  const mine = ++okr.requestId; // lets us ignore an older answer that arrives late
+  try {
+    const data = await cloud.okrs();
+    if (mine !== okr.requestId) return;
+    okr.data = data;
+    okr.phase = "ready";
+    okr.message = "";
+  } catch (e) {
+    if (mine !== okr.requestId) return;
+    okr.phase = "error";
+    okr.message = navigator.onLine ? e.message || String(e) : "You’re offline.";
+  }
+  paintOkrs();
+}
+// Only the report body is swapped, so the page doesn't jump or lose its scroll position.
+function paintOkrs() {
+  const el = document.querySelector("#okr-report");
+  if (el) el.innerHTML = okrBody();
+}
+// While the Progress screen is open, re-read the numbers every 10 seconds. That
+// way activity from other people's phones moves the numbers on this screen
+// without anyone touching it, which is what makes them visibly live in a demo.
+setInterval(() => {
+  if (s.screen === "progress" && !document.hidden) void refreshOkrs();
+}, 10000);
+function krCard(kr, noun) {
+  const value = Number(kr.value) || 0;
+  const target = Number(kr.target) || 1;
+  const pct = Math.min(100, Math.round((value / target) * 100)); // bar stops at 100%
+  const met = value >= target;
+  const isPercent = kr.unit === "%";
+  const shown = isPercent ? value + "%" : String(value);
+  const goal = isPercent ? target + "%" : target + " " + kr.unit;
+  // numerator/denominator are the raw counts behind the number, so anyone can see it is real data
+  const detail =
+    kr.denominator === undefined
+      ? "Average across every day someone used the app"
+      : kr.numerator + " of " + kr.denominator + " " + noun;
+  return `<article class="kr-card"><div class="kr-top"><h3>${esc(kr.title)}</h3><span class="pill${
+    met ? " met" : ""
+  }">${met ? "Target met" : "In progress"}</span></div><p class="kr-value">${esc(shown)}<small>Target ${esc(
+    goal
+  )}</small></p><div class="kr-bar" role="progressbar" aria-label="${esc(
+    kr.title
+  )}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><i style="width:${pct}%"></i></div><p class="kr-detail">${esc(
+    detail
+  )}</p></article>`;
+}
+function okrBody() {
+  if (!cloud)
+    return '<p class="info-note">Key Results are calculated by the database. Turn on Supabase to see them.</p>';
+  if (!okr.data) {
+    return okr.phase === "error"
+      ? `<p class="error" role="alert">Couldn’t load Key Results: ${esc(okr.message)}</p>`
+      : '<p class="info-note">Loading Key Results…</p>';
+  }
+  const d = okr.data;
+  const when = new Date(d.generatedAt).toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const note =
+    okr.phase === "error"
+      ? "Couldn’t refresh just now · showing " + when
+      : "Updated " + when + " · refreshes every 10 seconds";
+  return `<p class="overline-dark">OBJECTIVE 1</p><h2 class="obj-title">${esc(d.objective1.title)}</h2>${krCard(
+    d.objective1.kr1,
+    "tasks completed"
+  )}${krCard(d.objective1.kr2, "daily lists finished")}<p class="overline-dark">OBJECTIVE 2</p><h2 class="obj-title">${esc(
+    d.objective2.title
+  )}</h2>${krCard(d.objective2.kr3, "")}${krCard(
+    d.objective2.kr4,
+    "people active 3+ days this week"
+  )}<p class="okr-updated">${esc(note)}</p>`;
+}
+function progressReport() {
+  return `<section class="page progress-page"><header><span class="section-label">PROGRESS REPORT</span><h1>What First Things is doing</h1><p class="body-copy">Live numbers from everyone using the app. They move as people check off their first things.</p></header><div id="okr-report">${okrBody()}</div><button class="button secondary" data-action="okr-refresh">Refresh now</button></section>${navigation(
+    "progress"
+  )}`;
+}
 function locked() {
   const st = stats(s),
     a = apps.find((a) => a.name === s.attemptedApp) || apps[0],
@@ -1439,6 +1583,45 @@ document.addEventListener("click", async (e) => {
     render();
   }
   switch (a) {
+    case "copy-app-link": {
+  const shareUrl = "https://aarongarry.github.io/first-things-PWA/";
+
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    toast("Link copied! Send it to a friend.");
+  } catch {
+    toast("Couldn't copy the link.");
+  }
+  break;
+}
+    case "share-app": {
+  const shareUrl = "https://aarongarry.github.io/first-things-PWA/";
+
+  if (navigator.share) {
+    try {
+      await navigator.share({
+        title: "First Things",
+        text: "Check out First Things! It's an app that helps you focus on your goals.",
+        url: shareUrl
+      });
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        toast("Couldn't open sharing options.");
+      }
+    }
+  } else {
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      toast("App link copied! Send it to a friend.");
+    } catch {
+      toast("Couldn't copy the link.");
+    }
+  }
+  break;
+}
+    case "okr-refresh":
+      void refreshOkrs();
+      break;
     case "nav":
       closeModal();
       go(el.dataset.to);
@@ -1563,6 +1746,8 @@ document.addEventListener("click", async (e) => {
       const t = s.tasks.find((t) => t.id === id);
       if (t.done) {
         t.done = false;
+        const owner = s.goals.find((g) => g.id === t.goalId);
+        if (owner && owner.stepsDone > 0) owner.stepsDone--;
         reconcile(s);
         render();
         toast(
@@ -1855,6 +2040,39 @@ document.addEventListener("change", (e) => {
     };
     reader.readAsDataURL(file);
   }
+
+if (e.target.id === "avatar-upload") {
+  const input = e.target;
+  const file = input.files?.[0];
+  if (!file) return;
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    toast("Please choose a JPG, PNG, or WebP image.");
+    input.value = "";
+    return;
+  }
+  if (file.size > 8 * 1024 * 1024) {
+    toast("Choose a picture under 8 MB.");
+    input.value = "";
+    return;
+  }
+  resizeAvatar(file)
+    .then((dataUrl) => {
+      const previous = s.profile.avatar;
+      s.profile.avatar = dataUrl;
+      persistAccount();
+      if (storageFailed) {
+        if (previous) s.profile.avatar = previous;
+        else delete s.profile.avatar;
+        toast("Your picture couldn’t be saved. Free some device storage and try again.");
+        return;
+      }
+      render();
+      toast("Profile picture updated.");
+    })
+    .catch(() => toast("That image couldn’t be opened. Please try another."))
+    .finally(() => { input.value = ""; });
+}
+
 });
 document.addEventListener("input", (e) => {
   if (e.target.name === "message") chatDraft = e.target.value;
@@ -1916,6 +2134,8 @@ document.addEventListener("submit", async (e) => {
           id: s.goals[0]?.id || uid(),
           title: values.title.trim(),
           target: values.target,
+          created: s.goals[0]?.created || localDay(now(s)),
+          stepsDone: s.goals[0]?.stepsDone || 0,
         },
       ];
       go("calendar");
@@ -1975,6 +2195,8 @@ document.addEventListener("submit", async (e) => {
           id: uid(),
           title: values.title.trim(),
           target: values.target,
+          created: localDay(now(s)),
+          stepsDone: 0,
         });
       closeModal();
       render();
@@ -2002,7 +2224,7 @@ document.addEventListener("submit", async (e) => {
           save.textContent = "Save profile";
         }
       } else {
-        s.profile = { name, phone: activePhone };
+        s.profile = { ...s.profile, name, phone: activePhone };
         persistAccount();
         if (storageFailed) { fail("Your profile couldn’t be saved. Free some device storage and try again."); break; }
         closeModal();

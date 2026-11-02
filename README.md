@@ -110,9 +110,22 @@ Apple references: [App triggers](https://support.apple.com/en-om/guide/shortcuts
 - The top status shows **All changes synced**, **Offline**, or a retryable problem. A local-storage failure is shown separately; keep the app open if that occurs.
 - App updates download a complete new shell and offer **New version ready**. Tapping it saves local changes before reloading. Account data is separate from the app cache.
 
+## Progress report (OKR Key Results)
+
+The **Progress** tab shows our 2 Objectives and 4 Key Results. None of the numbers are hard-coded: the database calculates them from real activity when the screen opens, after each sync, and every 10 seconds while it stays open, so what people do on their own phones moves the numbers.
+
+| Objective | Key Result | Target | How it is calculated |
+|---|---|---|---|
+| 1. Students finish their first things before they scroll | Task completion rate | 70% | completed tasks ÷ planned tasks, across all days |
+| | Daily lists fully completed | 50% | days where every task was completed ÷ days with tasks |
+| 2. Earned scroll time keeps students coming back | Breaks earned per active day | 2 | average breaks earned on days someone used the app |
+| | Returning users | 5 people | people with a task list on 3 or more of the last 7 days (Mountain time) |
+
+Because an account's saved state only holds the current day, `supabase/okr-report.sql` keeps one log row per person per day. Phone-number changes keep the same history.
+
 ## What is real and what is simulated
 
-**Real:** Home Screen installation, phone-number account lookup, persistent goals/tasks, offline editing, reconnect sync, and responsive mobile layout.
+**Real:** Home Screen installation, phone-number account lookup, persistent goals/tasks, offline editing, reconnect sync, live OKR Key Results, and responsive mobile layout.
 
 **Optional integration:** an Apple Shortcuts Instagram reminder uses real synced task/break status, after manual setup on each iPhone.
 
@@ -139,6 +152,8 @@ The project URL and browser-safe publishable key are in `docs/supabase-config.js
 Run **`supabase/pwa-demo-accounts.sql`** when setting up the project or upgrading to profile editing in the project's SQL Editor. It is repeatable and creates a separate `first_things_demo_accounts` snapshot table and load/save/rename RPC functions. Re-running it adds the profile-editing columns and function without deleting existing accounts. Table access is blocked; the intentionally unverified demo API looks up one supplied phone number. Writes use a revision check and transaction lock. No anonymous-auth setting or external SDK is required for the new PWA.
 
 For the Instagram integration, also run **`supabase/instagram-shortcut.sql`** after the demo-account migration. This repeatable script creates account-linked status keys and two narrow RPCs. `first_things_instagram_status` supports GET with the publishable `apikey` header, uses server time and the configured time zone, and returns only `decision` (`allow`, `pause`, or `refresh`) and `message` with `Cache-Control: no-store`. It never changes task data. `tests/instagram-status.sql` runs database behavior checks in a rolled-back transaction.
+
+For the **Progress** tab, also run **`supabase/okr-report.sql`** after the demo-account migration. This repeatable script adds a small per-day activity log that fills itself in whenever an account is saved, and the `first_things_okrs` RPC that calculates the four Key Results. The log trigger can never block a save, and the RPC returns totals only (no names, phone numbers, or tasks). `tests/okr-report.sql` checks the math, the 7-day window, phone-number changes, and permissions in a rolled-back transaction.
 
 `supabase/setup.sql` and the original user/goal/task/daily ERD remain available for the earlier authenticated vertical slice. The migration does not alter or expose those records. When an old browser login and its still-valid anonymous session are present, the app imports those tasks into that remembered phone account once. An expired old session or a different browser may require a manual team-assisted transfer; old records remain in the original tables.
 
