@@ -1,8 +1,9 @@
 import { SUPABASE_URL, SUPABASE_KEY } from './supabase-config.js';
 
-export function shortcutConfig(key, zone, pageURL) {
+export function shortcutConfig(key, zone, pageURL, appName = "Instagram") {
   if (!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(key)) throw Error('Shortcut setup returned an invalid link. Try again.');
-  const url = new URL(`${SUPABASE_URL}/rest/v1/rpc/first_things_instagram_status`);
+  const url = new URL(`${SUPABASE_URL}/rest/v1/rpc/first_things_app_status`);
+  url.searchParams.set('app_name', appName);
   url.searchParams.set('access_key', key);
   url.searchParams.set('timezone_name', zone);
   const reminder = new URL('./', pageURL);

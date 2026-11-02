@@ -513,7 +513,7 @@ function firstGoal() {
     3,
     `<form data-form="first-goal" novalidate><label class="field"><span>My bigger goal</span><textarea name="title" placeholder="Feel ready for my final exams" maxlength="180">${esc(
       s.goalDraftTitle ?? g?.title ?? ""
-    )}</textarea></label><div class="chips"><button type="button" data-action="goal-example" data-value="Feel ready for my final exams">Be ready for finals</button><button type="button" data-action="goal-example" data-value="Build a consistent fitness routine">Move more</button></div><label class="field"><span>Target date</span><input type="date" name="target" value="${
+    )}</textarea></label><div class="chips"><button type="button" data-action="goal-example" data-value="Feel ready for my final exams">Be ready for finals</button><button type="button" data-action="goal-example" data-value="Build a consistent fitness routine">Move more</button></div><label class="field"><span>Target date</span><input type="date" min="${localDay()}" name="target" value="${
       s.goalDraftTarget ?? g?.target ?? localDay(now(s) + 30 * 86400000)
     }"></label><p class="small muted">A direction to work toward, not a deadline for every task. You can always change it.</p>${
       error ? `<div class="error" role="alert">${esc(error)}</div>` : ""
@@ -574,7 +574,7 @@ function appSelection() {
           }" aria-pressed="${s.selectedApps.includes(
             a.name
           )}"><span class="app-logo" style="background:${a.color}">${
-            a.short
+            `<img src="icons/apps/${a.name.toLowerCase()}.svg" alt="" width="28" height="28">`
           }</span><span><b>${a.name}</b><small>${
             a.desc
           }</small></span><span class="check-small">${
@@ -585,7 +585,7 @@ function appSelection() {
       s.selectedApps.length
         ? `${s.selectedApps.length} apps selected. Changes apply immediately.`
         : "No apps selected. You can still track your tasks; no apps will be restricted."
-    }</div><p class="small muted">This prototype demonstrates app blocking inside the demo only. It doesn’t control your device.</p>`,
+    }</div><p class="small muted">On iPhone, set up each selected app in Settings → App shortcuts. Desktop selection syncs to your phone; it does not block laptop apps.</p>`,
     btn(s.onboarded ? "Done" : "Keep these distractions for later", "apps-next")
   );
 }
@@ -973,7 +973,7 @@ function settings() {
     )
     .join(
       ""
-    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>Instagram shortcut</b><small>Set up your iPhone reminder</small></span><span>›</span></button><p class="section-label" style="margin-top:27px">EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
+    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>App shortcuts</b><small>Set up your iPhone reminder</small></span><span>›</span></button><p class="section-label" style="margin-top:27px">EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
     "phone"
   )}<span><b>Try a distracting app</b><small>See why it’s paused or unlocked</small></span><span>›</span></button><button class="setting-row" data-action="lockscreen">${icon(
     "lock"
@@ -985,8 +985,17 @@ function settings() {
     "settings"
   )}`;
 }
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return; } catch { /* Older browsers need selection. */ }
+  const field = document.createElement("textarea");
+  field.value = text; field.style.position = "fixed"; field.style.opacity = "0";
+  document.body.append(field); field.focus(); field.select(); field.setSelectionRange(0, text.length);
+  const copied = document.execCommand("copy"); field.remove();
+  if (!copied) throw Error("Select the setup value and copy it manually.");
+}
 let instagramConfig;
-async function instagramSetup() {
+async function instagramSetup(appName = "Instagram") {
+  if (!apps.some(app => app.name === appName)) return;
   instagramConfig = null;
   openModal("A pause before Instagram.", '<p>Connecting your synced account…</p>');
   const version = modalVersion, phone = activePhone;
@@ -998,28 +1007,28 @@ async function instagramSetup() {
     if (!record?.linked || record.retired || record.pendingMove || JSON.stringify(record.local) !== JSON.stringify(record.base))
       throw Error("Wait for All changes synced, then try again.");
     const { access_key } = await createCloud().shortcut(phone);
-    const config = shortcutConfig(access_key, Intl.DateTimeFormat().resolvedOptions().timeZone, location.href);
+    const config = shortcutConfig(access_key, Intl.DateTimeFormat().resolvedOptions().timeZone, location.href, appName);
     if (version !== modalVersion || phone !== activePhone) return;
     instagramConfig = config;
     const field = (label, key) => `<label class="field"><span>${label}</span><textarea readonly rows="2" data-shortcut-value="${key}">${esc(config[key])}</textarea></label><button class="text-link" data-action="shortcut-copy" data-value="${key}">Copy ${label.toLowerCase()}</button>`;
-    openModal("A pause before Instagram.", `<p>When Instagram opens, your shortcut checks your synced list. It leaves Instagram open during a break or after your tasks are done. Otherwise, it opens a reminder.</p>
-      <p class="small muted">Online demo · Set up once on your iPhone · Can be disabled in Shortcuts</p>
-      <button class="button" data-action="shortcut-check">Test my Instagram check</button><p id="shortcut-result" role="status"></p>
+    openModal("A pause before ${esc(appName)}.", `<div class="chips">${apps.map(app => `<button data-action="instagram-setup" data-value="${app.name}">${app.name}</button>`).join("")}</div><p>When ${esc(appName)} opens, your shortcut checks your synced list. It leaves ${esc(appName)} open during a break or after your tasks are done. Otherwise, it opens a reminder.</p>
+      <p class="small muted"> Set up once on your iPhone · Can be disabled in Shortcuts</p>
+      <button class="button" data-action="shortcut-check">Test my ${esc(appName)} check</button><p id="shortcut-result" role="status"></p>
       <details class="shortcut-guide"><summary>1. Create “Check First Things”</summary><ol>
       <li>Open Apple <b>Shortcuts</b> and create a shortcut named <b>Check First Things</b>.</li>
       <li>Add <b>URL</b> and paste the Check URL below.</li>
       <li>Add <b>Get Contents of URL</b>. Use <b>GET</b>. Expand its options, add a header named <b>apikey</b>, and paste the API key below as its value.</li>
       <li>Add <b>Get Dictionary Value</b>. Get the value for <b>decision</b> from Contents of URL.</li>
       <li>Add <b>If</b>: Dictionary Value <b>is</b> <b>allow</b>. Inside this branch add <b>Nothing</b>.</li>
-      <li>Inside <b>Otherwise</b>, add <b>URL</b> with the Reminder URL below, then <b>Open URLs</b> using that URL. Keep these actions before <b>End If</b>.</li>
-      <li>Run it once and allow its connection to our Supabase project and opening the reminder when prompted. Don’t add an Open Instagram action; Instagram is already open when the automation runs.</li></ol></details>
-      <details class="shortcut-guide"><summary>2. Run it when Instagram opens</summary><ol>
+      <li>Inside <b>Otherwise</b>, first add <b>Go to Home Screen</b> to leave the app, then add <b>URL</b> with the Reminder URL below, then <b>Open URLs</b> using that URL. Keep these actions before <b>End If</b>.</li>
+      <li>Run it once and allow its connection to our Supabase project and opening the reminder when prompted. Don’t add an Open ${esc(appName)} action; ${esc(appName)} is already open when the automation runs.</li></ol></details>
+      <details class="shortcut-guide"><summary>2. Run it when ${esc(appName)} opens</summary><ol>
       <li>In Shortcuts, add an automation with the <b>App</b> trigger. Depending on your Shortcuts layout, use Automation → + or add an automation trigger to a shortcut.</li>
-      <li>Select <b>Instagram</b> and <b>Is Opened</b>, then choose <b>Run Immediately</b>.</li>
+      <li>Select <b>${esc(appName)}</b> and <b>Is Opened</b>, then choose <b>Run Immediately</b>.</li>
       <li>Choose <b>Check First Things</b> (or add <b>Run Shortcut</b> and select it). Save the automation.</li>
-      <li>In First Things → Restricted apps, select Instagram. Add an unfinished task and wait for <b>All changes synced</b>. Open Instagram to test the redirect.</li></ol></details>
-      <details class="shortcut-guide"><summary>3. Copy your setup values</summary>${field("Check URL", "url")}${field("API key", "apiKey")}${field("Reminder URL", "reminder")}<p class="small muted">Time zone: ${esc(config.zone)}. If you travel to a different time zone, reopen this setup and replace the Check URL. Your link follows phone-number changes. Keep it private: it can read your Instagram access status.</p></details>
-      <p class="small muted">Open First Things each morning and after edits; wait for All changes synced. Offline requests may stop with a Shortcuts error and leave Instagram open. A break ending won’t close an app that’s already open. The reminder may open in Safari; your Home Screen app keeps its own session.</p>`);
+      <li>In First Things → Restricted apps, select ${esc(appName)}. Add an unfinished task and wait for <b>All changes synced</b>. Open ${esc(appName)} to test the redirect.</li></ol></details>
+      <details class="shortcut-guide"><summary>3. Copy your setup values</summary>${field("Check URL", "url")}${field("API key", "apiKey")}${field("Reminder URL", "reminder")}<p class="small muted">Time zone: ${esc(config.zone)}. If you travel to a different time zone, reopen this setup and replace the Check URL. Your link follows phone-number changes. Keep it private: it can read your ${esc(appName)} access status.</p></details>
+      <p class="small muted">Open First Things each morning and after edits; wait for All changes synced. Offline requests may stop with a Shortcuts error and leave ${esc(appName)} open. A break ending won’t close an app that’s already open. The reminder may open in Safari; your Home Screen app keeps its own session.</p><p class="small muted">Repeated opening can outrun iOS automations. Run Immediately and Go to Home Screen reduce the window, but Shortcuts cannot guarantee an app lock.</p>`);
   } catch (problem) {
     if (version === modalVersion && phone === activePhone) openModal("Let’s reconnect.", `<p>${esc(problem.message)}</p><button class="button" data-action="instagram-setup">Try again</button>`);
   }
@@ -1170,7 +1179,7 @@ function goalEditor(id = "") {
     id ? "Keep your goal in view." : "What’s your bigger why?",
     `<form data-form="goal" novalidate><label class="field"><span>Your goal</span><textarea name="title" maxlength="180">${esc(
       g.title
-    )}</textarea></label><label class="field"><span>Target date</span><input type="date" name="target" value="${
+    )}</textarea></label><label class="field"><span>Target date</span><input type="date" min="${localDay()}" name="target" value="${
       g.target
     }"></label><div class="form-error" role="alert"></div><button class="button">Save goal</button>${
       id
@@ -1304,7 +1313,7 @@ function tryApps() {
           `<button class="app-choice" data-action="open-app" data-value="${
             a.name
           }"><span class="app-logo" style="background:${a.color}">${
-            a.short
+            `<img src="icons/apps/${a.name.toLowerCase()}.svg" alt="" width="28" height="28">`
           }</span><span><b>${a.name}</b><small>${
             stats(s).remaining &&
             !stats(s).active &&
@@ -1627,11 +1636,11 @@ document.addEventListener("click", async (e) => {
       signOut();
       break;
     case "instagram-setup":
-      await instagramSetup();
+      await instagramSetup(v || "Instagram");
       break;
     case "shortcut-copy":
       if (instagramConfig && ["url", "apiKey", "reminder"].includes(v)) {
-        try { await navigator.clipboard.writeText(instagramConfig[v]); toast("Copied. Paste it into Shortcuts."); }
+        try { await copyText(instagramConfig[v]); toast("Copied. Paste it into Shortcuts."); }
         catch { modal.querySelector(`[data-shortcut-value="${v}"]`)?.select(); toast("Select and copy the highlighted value."); }
       }
       break;
@@ -1867,6 +1876,7 @@ document.addEventListener("submit", async (e) => {
       render();
     }
   };
+  if (values.target && values.target < localDay()) { fail("Choose today or a future date."); return; }
   switch (form.dataset.form) {
     case "signup": {
       let phone;

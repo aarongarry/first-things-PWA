@@ -1,8 +1,9 @@
 // Bump on every release that changes a shell asset. One version = one full shell.
-const CACHE = 'first-things-shell-v7';
+const CACHE = 'first-things-shell-v8';
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './model.js', './session.js',
   './shortcut.js', './offline.js', './cloud.js', './supabase-config.js', './pwa.js',
+  './icons/apps/instagram.svg', './icons/apps/tiktok.svg', './icons/apps/youtube.svg', './icons/apps/reddit.svg', './icons/apps/x.svg', './icons/apps/snapchat.svg',
   './george.png', './manifest.webmanifest', './icons/icon-192.png',
   './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/icon.svg',
 ];

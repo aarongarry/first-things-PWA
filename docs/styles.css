@@ -25,3 +25,16 @@
 }
 
 .shortcut-guide{border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}.shortcut-guide summary{cursor:pointer;font-weight:700;line-height:1.5}.shortcut-guide li{margin:12px 0;line-height:1.6}.shortcut-guide ol{padding-left:22px}.shortcut-guide textarea{width:100%;resize:vertical;overflow-wrap:anywhere;font-size:14px}.shortcut-guide .text-link{min-height:44px}#shortcut-result{line-height:1.6;font-size:14px}
+
+.app-logo img{display:block;object-fit:contain;filter:brightness(0) invert(1)}
+@media(min-width:651px){
+  .desktop-intro,.demo-panel,.statusbar,.home-indicator,.desktop-footer,.prototype-label{display:none}
+  .desktop-brand{position:static;max-width:1120px;margin:26px auto;padding:0 24px}
+  .workspace{display:block;max-width:1120px;min-height:0;padding:0 24px 32px}
+  .phone{width:100%;height:calc(100dvh - 110px);min-height:540px;border:1px solid var(--line);border-radius:24px;box-shadow:0 12px 40px #314a8010}
+  .app-content>.page{width:100%;max-width:850px;margin:0 auto;padding:32px 40px}
+  .app-content>.welcome{max-width:540px}
+  .nav{position:sticky;bottom:0;width:100%;background:white;border-top:1px solid var(--line);padding:8px 12%;z-index:2}
+  .task-title small{max-width:none}
+  dialog{width:600px;max-width:calc(100vw - 48px)}
+}

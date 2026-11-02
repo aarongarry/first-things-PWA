@@ -18,3 +18,9 @@ await assert.rejects(checkInstagram(config,async()=>({ok:false})));
 await assert.rejects(checkInstagram(config,async()=>({ok:true,json:async()=>({decision:'unknown'})})));
 await assert.rejects(checkInstagram(config,async()=>{throw Error('offline');}));
 console.log('PASS Instagram scoped URLs, private status requests, decisions and network failures');
+
+for (const app of ['Instagram','TikTok','YouTube','Reddit','X','Snapchat']) {
+ const setup = shortcutConfig(key, 'America/Denver', 'https://example.com/', app);
+ assert.equal(new URL(setup.url).searchParams.get('app_name'), app);
+ assert.equal(new URL(setup.url).pathname, '/rest/v1/rpc/first_things_app_status');
+}
