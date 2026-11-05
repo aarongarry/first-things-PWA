@@ -50,3 +50,5 @@
 .goal-total{font-size:12px;color:#8b97b0;margin:14px 0 16px}.goal-total b{color:var(--navy)}
 /* Stops double-tap-to-zoom on taps. Pinch zoom stays on for accessibility (Lighthouse). */
 html,body,button,a,input,select,textarea,label,summary{touch-action:manipulation}
+/* High-priority tasks get an accent edge (the "High priority" label carries the meaning). */
+.task-card.urgency-high{border-left:4px solid #c2410c}.break-card button+button{margin-left:6px}

@@ -11,6 +11,9 @@ import {
   completeTask,
   photoAttempt,
   startBreak,
+  endBreak,
+  breakEndPreview,
+  urgencyRank,
   rollover,
   deleteGoal,
   suggest,
@@ -767,7 +770,8 @@ function home() {
   const st = stats(s);
   const name = s.profile.name || "friend";
   const done = s.tasks.filter((t) => t.done),
-    todo = s.tasks.filter((t) => !t.done);
+    todo = s.tasks.filter((t) => !t.done).sort((x, y) => urgencyRank(x) - urgencyRank(y)),
+    reminderNote = st.reminders ? ` · ${st.reminders} reminder${st.reminders === 1 ? "" : "s"}` : "";
   return `<section class="page daily"><header class="daily-header"><div><span class="section-label">${today()}</span><h1>Your day, ${esc(
     name
   )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${esc(
@@ -777,10 +781,12 @@ function home() {
       ? st.remaining === 0
         ? "Look at you go."
         : `${st.remaining} little step${st.remaining === 1 ? "" : "s"} left.`
+      : s.tasks.length
+      ? "Just reminders today."
       : "A fresh start."
   }</h2><span class="progress-detail">${st.done} of ${
     st.total
-  } tasks complete</span></div><div class="progress-ring" style="--progress:${
+  } tasks complete${reminderNote}</span></div><div class="progress-ring" style="--progress:${
     st.percent
   }%"><span><b>${
     st.percent
@@ -815,15 +821,17 @@ function home() {
   }</b><small>${nextBreakText()}</small></div>${
     st.banked && st.remaining && !st.active
       ? '<button data-action="start-break">Start</button>'
-      : `<button data-action="break-detail" aria-label="Break details">${icon(
+      : `${
+          st.active ? '<button data-action="end-break">End</button>' : ""
+        }<button data-action="break-detail" aria-label="Break details">${icon(
           "clock"
         )}</button>`
   }</div><div class="task-heading"><h2>Today’s list <span>${
-    st.total
+    s.tasks.length
   }</span></h2><button class="icon-btn blue" data-action="new-task" aria-label="Add a task">${icon(
     "plus"
   )}</button></div>${
-    !st.total
+    !s.tasks.length
       ? `<div class="empty-state">${icon(
           "spark"
         )}<h3>A little space for possibility.</h3><p>Add something you want to do today.<br>A few words are all you need.</p>${btn(
@@ -858,7 +866,7 @@ function taskRow(t) {
   const goal = s.goals.find((g) => g.id === t.goalId);
   return `<div class="task-card ${
     t.done ? "completed" : ""
-  }"><button class="task-check" data-action="toggle-task" data-id="${
+  } ${t.urgency === "high" ? "urgency-high" : ""}"><button class="task-check" data-action="toggle-task" data-id="${
     t.id
   }" aria-label="${t.done ? "Mark incomplete:" : "Complete:"} ${esc(
     t.title
@@ -870,6 +878,8 @@ function taskRow(t) {
     [
       t.duration ? `${t.duration} min` : null,
       t.recurrence !== "none" ? t.recurrence : null,
+      t.urgency === "high" ? "High priority" : t.urgency === "low" ? "Low priority" : null,
+      t.reminder ? "Reminder only" : null,
       t.photo ? "Photo check" : null,
       goal?.title,
     ]
@@ -1249,7 +1259,9 @@ function locked() {
             : "You’re free to explore"
         }</b><p>That’s the idea. In a real app, you’d be back in ${
           a.name
-        }.</p></div>${btn("Back to my day", "nav", "", 'data-to="home"')}`
+        }.</p></div>${
+          st.active ? btn("End break early", "end-break", "secondary") : ""
+        }${btn("Back to my day", "nav", "", 'data-to="home"')}`
   }</div><p class="privacy-note">No real app was opened or blocked.</p></section>`;
 }
 function lockscreen() {
@@ -1297,6 +1309,8 @@ function taskEditor(id = "", kind = "task") {
     recurrence: "none",
     photo: false,
     goalId: "",
+    urgency: "normal",
+    reminder: false,
   };
   taskDraft = { id, kind };
   openModal(
@@ -1328,8 +1342,21 @@ function taskEditor(id = "", kind = "task") {
       )
       .join(
         ""
-      )}</select></label><label class="toggle-label"><span><b>Verify with a photo</b><small>Optional. Otherwise, just check it off.</small></span><input type="checkbox" name="photo" ${
+      )}</select></label><label class="field"><span>Priority</span><select name="urgency">${[
+      ["high", "High"],
+      ["normal", "Normal"],
+      ["low", "Low"],
+    ]
+      .map(
+        ([v, l]) =>
+          `<option value="${v}" ${
+            (t.urgency || "normal") === v ? "selected" : ""
+          }>${l}</option>`
+      )
+      .join("")}</select></label><label class="toggle-label"><span><b>Verify with a photo</b><small>Optional. Otherwise, just check it off.</small></span><input type="checkbox" name="photo" ${
       t.photo ? "checked" : ""
+    }></label><label class="toggle-label"><span><b>Reminder only</b><small>Won’t pause apps or count toward earning breaks.</small></span><input type="checkbox" name="reminder" ${
+      t.reminder ? "checked" : ""
     }></label><p class="small muted">This task goes on today’s list. Weekly repeats follow today’s weekday; monthly repeats follow the calendar day, or the last day in a shorter month.</p><div class="form-error" role="alert"></div><button class="button">${
       kind === "chat" ? "Save suggestion" : id ? "Save changes" : "Add to today"
     }</button>${
@@ -1530,6 +1557,9 @@ function breakDetail() {
     }</p>${
       st.banked && st.remaining && !st.active
         ? btn("Start a 10-minute break", "start-break")
+        : st.active
+        ? btn("End break early", "end-break", "secondary") +
+          btn("Back to my day", "close-modal", "ghost")
         : btn("Back to my day", "close-modal")
     }`
   );
@@ -1944,6 +1974,36 @@ document.addEventListener("click", async (e) => {
         toast(err.message);
       }
       break;
+    case "end-break": {
+      // Explain what ending now means before doing it.
+      const p = breakEndPreview(s);
+      if (!p) { toast("There is no break running."); break; }
+      const message =
+        p.outcome === "refund"
+          ? "You’ve used less than 2 minutes, so this break goes back to your bank to use later."
+          : p.outcome === "forfeit-repeat"
+          ? "This break was already returned to your bank once, so ending it now won’t put it back."
+          : `You’ve used ${Math.floor(p.used / 60000)} of 10 minutes. Ending now won’t put the rest of this break back in your bank.`;
+      openModal(
+        "End your break early?",
+        `<p>${message}</p>${btn("End break", "confirm-end-break")}${btn("Keep my break", "close-modal", "ghost")}`
+      );
+      break;
+    }
+    case "confirm-end-break":
+      try {
+        const r = endBreak(s);
+        closeModal();
+        render();
+        toast(
+          r.outcome === "refund"
+            ? "Break ended and saved for later. Selected apps are paused again."
+            : "Break ended. Selected apps are paused again."
+        );
+      } catch (err) {
+        toast(err.message);
+      }
+      break;
     case "break-detail":
       breakDetail();
       break;
@@ -1956,7 +2016,10 @@ document.addEventListener("click", async (e) => {
       go("locked");
       break;
     case "tackle": {
-      const task = s.tasks.find((t) => !t.done);
+      // Suggest the most urgent task that counts toward unlocking apps.
+      const task = s.tasks
+        .filter((t) => !t.done && !t.reminder)
+        .sort((x, y) => urgencyRank(x) - urgencyRank(y))[0];
       go("home");
       if (task) toast("A place to start: “" + task.title + "”");
       break;
@@ -2170,7 +2233,7 @@ document.addEventListener("submit", async (e) => {
       break;
     }
     case "task": {
-      const data = { ...values, photo: f.has("photo") };
+      const data = { ...values, photo: f.has("photo"), reminder: f.has("reminder") };
       if (!data.title.trim()) {
         fail("Give your task a name. A few words are enough.");
         break;
