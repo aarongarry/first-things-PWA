@@ -378,7 +378,6 @@ function navigation(active) {
   return `<nav class="nav" aria-label="Main navigation">${[
     ["home", "Today", "home"],
     ["goals", "Goals", "goal"],
-    ["progress", "Progress", "chart"],
     ["chat", "George", "chat"],
     ["settings", "Settings", "settings"],
   ]
@@ -421,7 +420,36 @@ function render() {
   document.querySelector("#phone-time").textContent = new Date(
     now(s)
   ).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  syncHistory();
 }
+
+// ---- Back button support ----
+// Every screen change is saved as a browser history entry, so the phone's Back
+// gesture/button returns to the previous screen instead of leaving the app.
+const ONBOARDING_SCREENS = ["welcome", "tone", "conversation", "firstGoal", "calendar", "apps", "breaks", "tutorial", "suggestions"];
+const MAIN_SCREENS = ["home", "goals", "progress", "chat", "settings", "locked", "lockscreen"];
+function syncHistory() {
+  if (history.state?.ft === s.screen) return; // already recorded (also true right after Back)
+  // Keep the hidden Progress route in the address; every other screen uses the plain address.
+  const url = location.pathname + location.search + (s.screen === "progress" ? "#progress" : "");
+  // The first entry of a visit has no screen saved yet, so tag it instead of adding a second one.
+  if (history.state?.ft === undefined) history.replaceState({ ft: s.screen }, "", url);
+  else history.pushState({ ft: s.screen }, "", url);
+}
+window.addEventListener("popstate", (event) => {
+  const target = event.state?.ft;
+  if (!target) return;
+  // Only show a screen that still makes sense. For example, after setup is finished,
+  // Back should not return to the setup steps, so skip over those entries.
+  const allowed = !activePhone ? ["welcome"] : s.onboarded ? MAIN_SCREENS : ONBOARDING_SCREENS;
+  if (!allowed.includes(target)) { history.back(); return; }
+  closeModal();
+  error = "";
+  s.screen = target;
+  render();
+  root.scrollTop = 0;
+  if (target === "progress") void refreshOkrs();
+});
 function welcome() {
   return `<section class="page welcome"><div class="wordmark"><span class="brand-mark">✓</span>first things<span class="brand-period">.</span></div><div class="hero-art"><img src="george.png" alt="George, your friendly blue companion"><span class="hello">Hey, I’m George!</span></div><h1>First, your goals.<br><span>Then, your scroll.</span></h1><p class="body-copy">Make a little progress on what matters.<br>Unlock a little time for everything else.</p><form data-form="signup" novalidate><label class="field"><span>Your name <small>(optional for returning users)</small></span><input name="name" value="${esc(
     s.profile.name
@@ -2295,8 +2323,18 @@ if (s.loginVerified) {
   }
   catch { s = initial(); rememberLogin(); }
 }
+// Hidden route: the Progress report is no longer in the navigation. Adding
+// #progress to the app's address (for example .../index.html#progress) opens it
+// for demos and grading. It only opens for a signed-in, onboarded user, so the
+// welcome and setup screens can't be skipped.
+function openHiddenReport() {
+  if (location.hash !== "#progress" || !activePhone || !s.onboarded) return;
+  go("progress");
+}
+window.addEventListener("hashchange", openHiddenReport);
 setupPWA({ beforeUpdate: () => { persistAccount(); return !storageFailed; } });
 render();
+openHiddenReport(); // handles a page that loads with #progress already set
 syncAccounts();
 updateTimers();
 // Optional browser-native tools share the same state and visible actions.
