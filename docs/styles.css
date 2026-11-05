@@ -52,3 +52,8 @@
 html,body,button,a,input,select,textarea,label,summary{touch-action:manipulation}
 /* High-priority tasks get an accent edge (the "High priority" label carries the meaning). */
 .task-card.urgency-high{border-left:4px solid #c2410c}.break-card button+button{margin-left:6px}
+/* Routine sync messages float over the top and fade; problems stay as a banner (see databaseStatus in app.js). */
+.database-status.floating{position:absolute;top:46px;left:50%;transform:translateX(-50%);z-index:30;width:max-content;max-width:calc(100% - 24px);border-radius:999px;padding:3px 12px;box-shadow:0 4px 14px #1d2a5a22;pointer-events:none;transition:opacity .4s ease}
+.database-status.floating.faded{opacity:0}
+@media(max-width:650px),(display-mode:standalone){.database-status.floating{top:calc(env(safe-area-inset-top) + 3px)}}
+@media(prefers-reduced-motion:reduce){.database-status.floating{transition:none}}

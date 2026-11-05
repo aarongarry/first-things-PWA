@@ -107,7 +107,7 @@ Apple references: [App triggers](https://support.apple.com/en-om/guide/shortcuts
 - First use on a new device needs internet to load an existing cloud account. An uncached number used offline can start locally and merge when connected.
 - Signing out keeps local accounts and pending edits. Clearing website data/removing app storage can erase changes that have not synced.
 - Independent task additions and field edits merge. For the same field, the device syncing its pending edit last wins. Deleting an item wins over a stale edit to it. Server revisions prevent a stale full snapshot from silently overwriting newer data.
-- The top status shows **All changes synced**, **Offline**, or a retryable problem. A local-storage failure is shown separately; keep the app open if that occurs.
+- The top status shows **All changes synced**, **Offline**, or a retryable problem. Routine messages (**Saved on this device**, **Syncing…**, **All changes synced**) appear as a small pill and fade after a couple of seconds; offline, errors, a changed phone number, and local-storage failures stay on screen as a banner until fixed. To keep the status visible all the time (for example while following the steps above or during a demo), add `?status=on` to the address, such as `.../index.html?status=on`. A local-storage failure is shown separately; keep the app open if that occurs.
 - App updates download a complete new shell and offer **New version ready**. Tapping it saves local changes before reloading. Account data is separate from the app cache.
 
 ## Task options and ending a break

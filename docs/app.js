@@ -56,6 +56,13 @@ let storageFailed = false;
 // Progress report: Key Results are calculated by the database (first_things_okrs)
 // from everyone's real activity. Nothing on that screen is hard-coded.
 let okr = { phase: "idle", data: null, message: "", requestId: 0 };
+// The sync status stays out of the way when all is well: routine messages ("Saved on this
+// device", "Syncing…", "All changes synced") float over the top as a small pill and fade
+// away. Anything that needs attention (offline, errors, a changed phone number, a
+// storage problem) stays as a banner until it is fixed. Add ?status=on to the address to
+// keep the banner visible all the time, for example during a demo.
+const alwaysShowStatus = new URL(location.href).searchParams.get("status") === "on";
+let statusFadeTimer;
 function databaseStatus(phase, message = "") {
   const element = document.querySelector("#database-status");
   const labels = {
@@ -69,6 +76,14 @@ function databaseStatus(phase, message = "") {
   };
   element.textContent = labels[phase] || message;
   element.dataset.phase = phase;
+  const routine = ["local", "syncing", "saved"].includes(phase) && !alwaysShowStatus;
+  element.classList.toggle("floating", routine);
+  element.classList.remove("faded");
+  clearTimeout(statusFadeTimer);
+  // "Syncing…" stays until the sync finishes; the other two fade after a moment.
+  if (routine && phase !== "syncing") {
+    statusFadeTimer = setTimeout(() => element.classList.add("faded"), 2500);
+  }
   if (phase === "moved") {
     root.inert = true;
     const button = document.createElement("button");
@@ -90,7 +105,10 @@ const accounts = createAccountStore({
   remote: cloud,
   online: () => navigator.onLine,
   report(phone, phase, message) {
-    if (phone === activePhone && !storageFailed) databaseStatus(phase, message);
+    // Already showing "All changes synced"? A routine check has nothing to announce.
+    // (Edits switch the status to "Saved on this device" first, so real saves still show.)
+    const quiet = (phase === "syncing" || phase === "saved") && document.querySelector("#database-status")?.dataset.phase === "saved";
+    if (phone === activePhone && !storageFailed && !quiet) databaseStatus(phase, message);
     // A sync just finished, so the Key Results may have moved.
     if (phase === "saved" && phone === activePhone && s.screen === "progress") void refreshOkrs();
   },
@@ -107,11 +125,15 @@ const accounts = createAccountStore({
   changed(phone, snapshot) {
     if (phone !== activePhone || storageFailed) return;
     const wasOnboarded = s.onboarded;
+    const before = JSON.stringify(accountSnapshot(s));
     applySnapshot(s, snapshot);
     lastSnapshot = accountSnapshot(s);
     if (!wasOnboarded && s.onboarded) s.screen = "home";
     rememberLogin();
-    if (!modal.open && !document.activeElement?.matches('input, textarea, select')) render();
+    // The background check runs every 30 seconds. If nothing is new, leave the screen
+    // alone: redrawing it makes images and layout flicker for no reason.
+    const somethingNew = JSON.stringify(lastSnapshot) !== before || (!wasOnboarded && s.onboarded);
+    if (somethingNew && !modal.open && !document.activeElement?.matches('input, textarea, select')) render();
   },
 });
 function persistAccount() {
@@ -1150,9 +1172,19 @@ async function refreshOkrs() {
   paintOkrs();
 }
 // Only the report body is swapped, so the page doesn't jump or lose its scroll position.
+let lastOkrCards = "";
 function paintOkrs() {
   const el = document.querySelector("#okr-report");
-  if (el) el.innerHTML = okrBody();
+  if (!el) return;
+  const { cards, note } = okrParts();
+  if (cards === lastOkrCards) {
+    // Same numbers: only refresh the "Updated" time, so nothing flashes every 10 seconds.
+    const label = el.querySelector(".okr-updated");
+    if (label && note) label.textContent = note;
+    return;
+  }
+  lastOkrCards = cards;
+  el.innerHTML = okrBody();
 }
 // While the Progress screen is open, re-read the numbers every 10 seconds. That
 // way activity from other people's phones moves the numbers on this screen
@@ -1183,13 +1215,20 @@ function krCard(kr, noun) {
     detail
   )}</p></article>`;
 }
-function okrBody() {
+// The report has two parts: the Key Result cards and a small "Updated" note whose
+// time changes on every refresh. They are split so the cards are only redrawn when
+// their numbers change, while the note keeps ticking.
+function okrParts() {
   if (!cloud)
-    return '<p class="info-note">Key Results are calculated by the database. Turn on Supabase to see them.</p>';
+    return { cards: '<p class="info-note">Key Results are calculated by the database. Turn on Supabase to see them.</p>', note: "" };
   if (!okr.data) {
-    return okr.phase === "error"
-      ? `<p class="error" role="alert">Couldn’t load Key Results: ${esc(okr.message)}</p>`
-      : '<p class="info-note">Loading Key Results…</p>';
+    return {
+      cards:
+        okr.phase === "error"
+          ? `<p class="error" role="alert">Couldn’t load Key Results: ${esc(okr.message)}</p>`
+          : '<p class="info-note">Loading Key Results…</p>',
+      note: "",
+    };
   }
   const d = okr.data;
   const when = new Date(d.generatedAt).toLocaleTimeString("en-US", {
@@ -1201,7 +1240,7 @@ function okrBody() {
     okr.phase === "error"
       ? "Couldn’t refresh just now · showing " + when
       : "Updated " + when + " · refreshes every 10 seconds";
-  return `<p class="overline-dark">OBJECTIVE 1</p><h2 class="obj-title">${esc(d.objective1.title)}</h2>${krCard(
+  const cards = `<p class="overline-dark">OBJECTIVE 1</p><h2 class="obj-title">${esc(d.objective1.title)}</h2>${krCard(
     d.objective1.kr1,
     "tasks completed"
   )}${krCard(d.objective1.kr2, "daily lists finished")}<p class="overline-dark">OBJECTIVE 2</p><h2 class="obj-title">${esc(
@@ -1209,10 +1248,15 @@ function okrBody() {
   )}</h2>${krCard(d.objective2.kr3, "")}${krCard(
     d.objective2.kr4,
     "people active 3+ days this week"
-  )}<p class="okr-updated">${esc(note)}</p>`;
+  )}`;
+  return { cards, note };
+}
+function okrBody() {
+  const { cards, note } = okrParts();
+  return cards + (note ? `<p class="okr-updated">${esc(note)}</p>` : "");
 }
 function progressReport() {
-  return `<section class="page progress-page"><header><span class="section-label">PROGRESS REPORT</span><h1>What First Things is doing</h1><p class="body-copy">Live numbers from everyone using the app. They move as people check off their first things.</p></header><div id="okr-report">${okrBody()}</div><button class="button secondary" data-action="okr-refresh">Refresh now</button></section>${navigation(
+  return `<section class="page progress-page"><header><span class="section-label">PROGRESS REPORT</span><h1>What First Things is doing</h1><p class="body-copy">Live numbers from everyone using the app. They move as people check off their first things.</p></header><div id="okr-report">${((lastOkrCards = okrParts().cards), okrBody())}</div><button class="button secondary" data-action="okr-refresh">Refresh now</button></section>${navigation(
     "progress"
   )}`;
 }
