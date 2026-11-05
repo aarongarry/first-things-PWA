@@ -651,3 +651,55 @@ nav button { font-size: 14px; }
 .progress-card h2 { font-size: 20px; margin: 0; }
 .progress-detail { font-size: 14px; }
 .progress-card .progress-line { height: 6px; margin-top: 6px; }
+
+/* ---------- one font, everything hand drawn ---------- */
+*, *::before, *::after {
+  font-family: var(--hand) !important;
+  font-weight: 400 !important;
+  font-synthesis: none;
+}
+:root {
+  --wob: 14px 4px 12px 5px / 5px 12px 4px 14px;
+  --wob2: 5px 13px 6px 12px / 12px 5px 13px 6px;
+  --squiggle: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='7'%3E%3Cpath d='M0 3.5 Q11 .8 22 3.6 T44 3.4' fill='none' stroke='%23a9a493' stroke-width='1.7' stroke-linecap='round'/%3E%3C/svg%3E");
+  --check: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4 12.5 L9.5 18 Q13 9 21 4.5' fill='none' stroke='%2325252a' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+
+/* pen-wobble on shapes that contain no text */
+.task-check {
+  filter: url(#rough);
+}
+.progress-line, .goal-track { border-radius: 3px 8px 4px 7px / 7px 3px 8px 4px !important; }
+
+/* wobbly boxes instead of perfect rectangles */
+.progress-card, .goal-card, .button, .add-task, .george-home, .bubble, .user-bubble, .toast,
+.update-banner, input, select, textarea, .chips button, .due-pill, .pill, .kr-card, .suggestion-card,
+.card, .empty-state, .calendar-event, .app-choice, .choice, .radio, dialog {
+  border-radius: var(--wob) !important;
+}
+.progress-card, .goal-card, .button, .add-task, .chips button, input, select, textarea {
+  border-width: 2px;
+}
+.goal-card { border-radius: var(--wob2) !important; }
+.button.secondary, .chips button { border-radius: var(--wob2) !important; }
+.task-check { border-radius: 6px 9px 5px 8px / 8px 5px 9px 6px !important; border-width: 2px; }
+.task-check[aria-checked="true"], .task-card.done .task-check {
+  background: #fff var(--check) center / 80% no-repeat;
+  color: transparent;
+}
+.profile-circle, .icon-btn { border-radius: 52% 48% 50% 50% / 50% 52% 48% 50% !important; }
+
+/* hand-drawn squiggly dividers instead of dashed lines */
+.task-card, .task-card:nth-of-type(n), .setting-row, .break-card, .access-strip {
+  border: 0 !important;
+  background: transparent var(--squiggle) repeat-x left bottom / 44px 7px !important;
+  padding-bottom: 18px;
+}
+.task-card.done { opacity: 0.6; }
+.break-card, .access-strip { background-position: left top !important; padding-top: 18px; padding-bottom: 12px; }
+.setting-row { padding-bottom: 18px; }
+nav { border-top: 0; background-image: var(--squiggle); background-repeat: repeat-x; background-position: left top; background-size: 44px 7px; }
+.add-task { border-style: dashed; }
+
+/* a hand-drawn underline under the section title */
+.task-heading h2, .page > h1 { display: inline-block; }
