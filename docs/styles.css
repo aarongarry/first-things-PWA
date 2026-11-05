@@ -48,3 +48,5 @@
 .goal-track{height:8px;border-radius:8px;background:#eef1fa;overflow:hidden}.goal-track i{display:block;height:100%;border-radius:8px;background:var(--blue)}
 .goal-track i.time{background:#9aa9d6}.goal-track i.time.soon{background:#e0a100}.goal-track i.time.over{background:#d9534f}
 .goal-total{font-size:12px;color:#8b97b0;margin:14px 0 16px}.goal-total b{color:var(--navy)}
+/* Stops double-tap-to-zoom on taps. Pinch zoom stays on for accessibility (Lighthouse). */
+html,body,button,a,input,select,textarea,label,summary{touch-action:manipulation}
