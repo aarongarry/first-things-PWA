@@ -1,0 +1,653 @@
+/* First Things: spiral-bound mini notebook theme.
+   Loaded after styles.css, so it only overrides looks. Delete the <link> in
+   index.html to go back to the old design. */
+
+:root {
+  --paper: #fbf9f4;
+  --paper-2: #f3f0e7;
+  --rule: #e3dfd3;
+  --margin: #cfcabb;
+  --ink: #25252a;
+  --ink-soft: #76726a;
+  --pen: #25252a;
+  --blue: #25252a;
+  --navy: #25252a;
+  --muted: #76726a;
+  --line: #e0dbcd;
+  --pale: #f1eee5;
+  --hand: "Patrick Hand", "Bradley Hand", "Segoe Print", "Comic Sans MS", "Chalkboard SE", sans-serif;
+  --sticky-yellow: #fffdf8;
+  --sticky-pink: #f6f3ea;
+  --sticky-mint: #fbf9f2;
+  --sticky-blue: #f1eee5;
+  --shadow: 0 1px 0 rgba(0, 0, 0, 0.05), 0 6px 10px -4px rgba(60, 50, 20, 0.28);
+}
+
+/* ---------- the desk and the notebook ---------- */
+body {
+  background: #e7dfcc;
+  color: var(--ink);
+}
+.phone {
+  background: var(--paper);
+  position: relative;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 26px);
+}
+/* spiral binding along the top edge */
+.phone::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 26px;
+  z-index: 20;
+  pointer-events: none;
+  background:
+    /* wire loops */
+    radial-gradient(ellipse 5px 9px at 50% 9px, transparent 3px, #8d93a8 3.5px, #c9cddb 5px, transparent 5.5px) 0 0 / 20px 26px repeat-x,
+    /* punched holes */
+    radial-gradient(circle at 50% 14px, #6c6450 0 3.2px, transparent 3.6px) 0 0 / 20px 26px repeat-x,
+    linear-gradient(#efe8d2, #fffdf5);
+  border-bottom: 1px dashed #e4dcc4;
+}
+.app-content {
+  background-color: var(--paper);
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 31px,
+    var(--rule) 31px,
+    var(--rule) 32px
+  );
+  background-attachment: local;
+}
+.statusbar {
+  display: none;
+}
+.database-status {
+  background: var(--sticky-yellow);
+  color: var(--ink);
+  font-family: var(--hand);
+  font-size: 12px;
+  border-bottom: 1px dashed #d9c75c;
+}
+
+/* ---------- type ---------- */
+h1,
+h2,
+h3,
+.task-heading h2,
+.obj-title,
+.section-label,
+.overline,
+.overline-dark,
+.field-label,
+.eyebrow {
+  font-family: var(--hand);
+}
+h1 {
+  font-size: 30px;
+  line-height: 1.1;
+  font-weight: 700;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+h2 {
+  font-weight: 700;
+}
+.blue {
+  color: var(--pen);
+}
+h1 .blue {
+  color: #e0457b;
+}
+.section-label,
+.overline,
+.overline-dark {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--pen);
+}
+.body-copy,
+.muted,
+small {
+  color: var(--ink-soft);
+}
+.text-link {
+  color: var(--pen);
+  text-decoration: underline wavy #9db0f5;
+  text-underline-offset: 4px;
+}
+
+/* ---------- sticky note cards ---------- */
+.task-card,
+.break-card,
+.access-strip,
+.setting-row,
+.kr-card,
+.suggestion-card,
+.card,
+.empty-state,
+.calendar-event {
+  background: var(--sticky-yellow);
+  border: 0;
+  border-radius: 3px 3px 14px 3px;
+  box-shadow: var(--shadow);
+  position: relative;
+  color: var(--ink);
+}
+.task-card:nth-of-type(4n + 2) { background: var(--sticky-pink); transform: rotate(0.5deg); }
+.task-card:nth-of-type(4n + 3) { background: var(--sticky-mint); transform: rotate(-0.6deg); }
+.task-card:nth-of-type(4n + 4) { background: var(--sticky-blue); transform: rotate(0.4deg); }
+.task-card:nth-of-type(4n + 1) { transform: rotate(-0.4deg); }
+.task-card {
+  margin: 14px 0;
+}
+.task-card b,
+.task-title b {
+  font-size: 17px;
+  font-weight: 700;
+}
+.task-card.done {
+  background: #ececec;
+  opacity: 0.8;
+}
+.task-card.done .task-title b {
+  text-decoration: line-through;
+  text-decoration-color: var(--pen);
+  text-decoration-thickness: 2px;
+}
+/* tape holding the note on */
+.task-card::before {
+  content: "";
+  position: absolute;
+  top: -9px;
+  left: 50%;
+  width: 54px;
+  height: 17px;
+  transform: translateX(-50%) rotate(-2deg);
+  background: rgba(255, 255, 255, 0.55);
+  border-left: 1px dashed rgba(0, 0, 0, 0.08);
+  border-right: 1px dashed rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+}
+.task-check {
+  background: var(--paper);
+  border: 2.5px solid var(--ink);
+  border-radius: 6px 8px 5px 9px;
+  box-shadow: 1px 2px 0 rgba(0, 0, 0, 0.15);
+}
+.task-card.done .task-check,
+.task-check[aria-checked="true"] {
+  background: var(--pen);
+  border-color: var(--ink);
+  color: #fff;
+}
+.break-card,
+.access-strip {
+  background: var(--sticky-blue);
+  transform: rotate(0.3deg);
+}
+.break-card {
+  background: var(--sticky-mint);
+  transform: rotate(-0.4deg);
+}
+.break-icon {
+  background: #fff;
+}
+
+/* the big "your first things" card becomes a notebook cover tab */
+.progress-card {
+  background: var(--pen);
+  color: #fff;
+  border-radius: 4px 4px 4px 18px;
+  box-shadow: 4px 5px 0 var(--ink);
+  border: 2px solid var(--ink);
+  position: relative;
+}
+.progress-card h2,
+.progress-card .overline {
+  color: #fff;
+  font-family: var(--hand);
+}
+.progress-card h2 {
+  font-size: 22px;
+}
+.progress-line {
+  background: rgba(255, 255, 255, 0.28);
+}
+.progress-line i {
+  background: var(--sticky-yellow);
+}
+
+/* goals are index cards */
+.goal-card {
+  background: #fff;
+  background-image: linear-gradient(to bottom, #f4a3a3 0 2px, transparent 2px),
+    repeating-linear-gradient(to bottom, transparent 0, transparent 27px, var(--rule) 27px, var(--rule) 28px);
+  background-position: 0 44px, 0 46px;
+  background-repeat: no-repeat, repeat;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  box-shadow: var(--shadow);
+  transform: rotate(-0.3deg);
+}
+.goal-card h2 {
+  font-size: 22px;
+}
+.goal-symbol,
+.icon-btn {
+  background: var(--sticky-yellow);
+  border-radius: 50%;
+  color: var(--ink);
+  box-shadow: 1px 2px 0 rgba(0, 0, 0, 0.15);
+}
+.goal-track,
+.progress-line {
+  border-radius: 3px;
+}
+.goal-track {
+  background: #fff;
+  border: 1.5px solid var(--ink);
+  height: 11px;
+}
+.goal-track i {
+  border-radius: 0;
+  background: repeating-linear-gradient(135deg, var(--pen) 0 6px, #5a76f0 6px 12px);
+}
+.due-pill {
+  border-radius: 3px;
+  border: 1.5px solid var(--ink);
+  background: var(--sticky-mint);
+  color: var(--ink);
+}
+.due-pill.soon { background: var(--sticky-yellow); color: var(--ink); }
+.due-pill.over { background: var(--sticky-pink); color: #8e1c1c; }
+
+/* ---------- buttons ---------- */
+.button,
+.add-task,
+.bottom-actions button {
+  border-radius: 10px 12px 9px 12px;
+  font-family: var(--hand);
+  font-size: 15px;
+  font-weight: 700;
+}
+.button {
+  background: var(--pen);
+  color: #fff;
+  border: 2px solid var(--ink);
+  box-shadow: 3px 4px 0 var(--ink);
+}
+.button:active {
+  transform: translate(2px, 3px);
+  box-shadow: 1px 1px 0 var(--ink);
+}
+.button.secondary,
+.button.ghost {
+  background: #fff;
+  color: var(--ink);
+}
+.button.danger {
+  background: var(--sticky-pink);
+  color: #8e1c1c;
+}
+.add-task {
+  border: 2px dashed var(--ink-soft);
+  background: transparent;
+  color: var(--ink);
+}
+
+/* ---------- inputs ---------- */
+input,
+select,
+textarea {
+  background: #fff;
+  border-color: var(--ink) !important;
+  border-width: 1.5px;
+  border-radius: 6px;
+  color: var(--ink);
+}
+input:focus,
+select:focus,
+textarea:focus {
+  outline: 3px solid #ffe27a;
+}
+.field > span,
+.field-label {
+  font-family: var(--hand);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* ---------- bottom navigation: notebook tabs ---------- */
+nav {
+  background: var(--paper-2);
+  border-top: 2px solid var(--ink);
+}
+nav button {
+  font-family: var(--hand);
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+nav button.active {
+  color: var(--ink);
+}
+nav button.active svg {
+  background: #ffe27a;
+  border-radius: 8px;
+  padding: 2px;
+  box-sizing: content-box;
+}
+
+/* ---------- chat ---------- */
+.bubble,
+.george-bubble .bubble {
+  background: var(--sticky-blue);
+  border-radius: 3px 14px 14px 14px;
+  box-shadow: var(--shadow);
+  color: var(--ink);
+}
+.user-bubble {
+  background: var(--sticky-yellow);
+  color: var(--ink);
+  border-radius: 14px 3px 14px 14px;
+  box-shadow: var(--shadow);
+}
+.chips button {
+  background: #fff;
+  border: 1.5px solid var(--ink);
+  border-radius: 20px;
+  font-family: var(--hand);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+/* ---------- popups, toasts ---------- */
+dialog {
+  background: var(--paper);
+  border: 2px solid var(--ink);
+  border-radius: 6px;
+  box-shadow: 6px 8px 0 rgba(42, 45, 62, 0.5);
+  color: var(--ink);
+}
+dialog::backdrop {
+  background: rgba(60, 50, 20, 0.45);
+}
+.toast {
+  background: var(--sticky-yellow);
+  color: var(--ink);
+  font-family: var(--hand);
+  font-size: 14px;
+  border-radius: 3px 3px 12px 3px;
+  box-shadow: var(--shadow);
+  border: 1.5px solid #d9c75c;
+  transform: rotate(-0.6deg);
+}
+.update-banner {
+  background: var(--sticky-yellow);
+  color: var(--ink);
+  font-family: var(--hand);
+  font-size: 14px;
+}
+
+/* ---------- profile + settings ---------- */
+.profile-circle {
+  background: var(--sticky-pink);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  outline: none;
+  font-family: var(--hand);
+  font-size: 17px;
+  font-weight: 700;
+}
+.setting-row {
+  margin: 10px 0;
+  background: #fff;
+  border: 1px solid var(--line);
+}
+.setting-row:nth-of-type(3n + 1) { transform: rotate(0.25deg); }
+.setting-row:nth-of-type(3n + 2) { transform: rotate(-0.25deg); }
+
+/* ---------- desktop view: notebook on a desk ---------- */
+@media (min-width: 900px) {
+  .phone {
+    border: 2px solid var(--ink);
+    border-radius: 6px 22px 22px 6px;
+    box-shadow: 10px 14px 0 rgba(42, 45, 62, 0.35);
+    overflow: hidden;
+  }
+  .desktop-intro h1,
+  .demo-panel h2 {
+    font-family: var(--hand);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-card,
+  .goal-card,
+  .setting-row,
+  .toast,
+  .progress-card {
+    transform: none !important;
+  }
+}
+
+/* ---------- Today screen: the to-do list comes first ---------- */
+.daily {
+  padding-top: 10px;
+}
+.daily-header {
+  margin-bottom: 8px;
+}
+.daily-header h1 {
+  font-size: 26px;
+}
+.progress-card {
+  padding: 12px 16px 14px;
+  margin: 0 0 6px;
+  box-shadow: 3px 4px 0 var(--ink);
+}
+.progress-card h2 {
+  font-size: 20px;
+  margin: 2px 0;
+}
+.progress-card .overline {
+  font-size: 11px;
+}
+.progress-card .progress-ring {
+  display: none;
+}
+.progress-card .progress-line {
+  margin-top: 8px;
+}
+.task-heading {
+  margin: 14px 0 2px;
+}
+.task-heading h2 {
+  font-size: 22px;
+}
+.task-card {
+  margin: 12px 0;
+  padding: 12px 14px;
+}
+.task-card b,
+.task-title b {
+  font-size: 16px;
+}
+/* the break + app-pause notes move under the list */
+.daily .access-strip,
+.daily .break-card {
+  order: 10;
+  margin: 8px 0 0;
+  padding: 10px 14px;
+}
+.daily .add-task {
+  order: 9;
+}
+.progress-card {
+  min-height: 0;
+  height: auto;
+  align-content: start;
+  row-gap: 0;
+}
+
+/* ---------- monochrome paper pass ---------- */
+body { background: #dedad0; }
+.database-status { background: var(--paper-2); border-bottom: 1px dashed #cfcabb; }
+h1 .blue, .blue { color: var(--ink); }
+.section-label, .overline, .overline-dark { color: var(--ink-soft); }
+.text-link { color: var(--ink); text-decoration-color: #b9b4a6; }
+.phone::before {
+  background:
+    radial-gradient(ellipse 5px 9px at 50% 9px, transparent 3px, #8a8a8a 3.5px, #c4c4c4 5px, transparent 5.5px) 0 0 / 20px 26px repeat-x,
+    radial-gradient(circle at 50% 14px, #6b675c 0 3.2px, transparent 3.6px) 0 0 / 20px 26px repeat-x,
+    linear-gradient(#e9e5da, #fbf9f4);
+  border-bottom-color: #dcd7c9;
+}
+/* every note is paper, just slightly different shades */
+.task-card, .break-card, .access-strip, .kr-card, .suggestion-card, .card, .empty-state, .calendar-event {
+  border: 1px solid #ded9cb;
+}
+.task-card:nth-of-type(even) { background: #f6f3ea; }
+.task-card.done { background: #ebe8df; }
+.task-card::before { background: rgba(215, 210, 195, 0.6); border-color: rgba(0, 0, 0, 0.06); }
+.task-check { background: #fff; }
+.task-check[aria-checked="true"], .task-card.done .task-check { background: var(--ink); }
+.task-card.done .task-title b { text-decoration-color: var(--ink); }
+.break-card, .access-strip { background: var(--paper-2); }
+.break-icon { background: #fff; }
+.progress-card { background: var(--ink); color: var(--paper); border-color: var(--ink); box-shadow: 3px 4px 0 rgba(37, 37, 42, 0.3); }
+.progress-card h2, .progress-card .overline { color: var(--paper); }
+.progress-line i { background: var(--paper); }
+.progress-line { background: rgba(255, 255, 255, 0.25); }
+.goal-card { background-image: linear-gradient(to bottom, #cfcabb 0 2px, transparent 2px), repeating-linear-gradient(to bottom, transparent 0, transparent 27px, var(--rule) 27px, var(--rule) 28px); }
+.goal-symbol, .icon-btn { background: #fff; border: 1px solid #d6d1c3; }
+.goal-track i { background: repeating-linear-gradient(135deg, var(--ink) 0 5px, #5b5b60 5px 10px); }
+.goal-track i.time, .goal-track i.time.soon, .goal-track i.time.over { background: #a9a597; }
+.due-pill, .due-pill.soon, .due-pill.over { background: #fff; color: var(--ink); border-color: var(--ink); }
+.due-pill.over { background: var(--ink); color: var(--paper); }
+.button { background: var(--ink); color: var(--paper); box-shadow: 3px 4px 0 rgba(37, 37, 42, 0.3); }
+.button.secondary, .button.ghost { background: #fff; color: var(--ink); }
+.button.danger { background: #fff; color: var(--ink); border-style: dashed; }
+input:focus, select:focus, textarea:focus { outline: 3px solid #d9d4c4; }
+nav { background: var(--paper-2); border-top-color: #cfcabb; }
+nav button.active svg { background: #e6e2d5; }
+nav button.active { color: var(--ink); }
+.bubble, .george-bubble .bubble { background: #fff; border: 1px solid #ded9cb; }
+.user-bubble { background: #ebe8df; border: 1px solid #d6d1c3; }
+.chips button { border-color: #cfcabb; }
+dialog { border-color: #cfcabb; box-shadow: 6px 8px 0 rgba(37, 37, 42, 0.18); }
+.toast, .update-banner { background: var(--ink); color: var(--paper); border: 0; }
+.profile-circle { background: #fff; border-color: var(--ink); }
+.setting-row { background: #fff; }
+.goal-bar-head, .goal-total, .goal-progress, summary, .goal-task, .small, small, nav button, .task-title small, .setting-row small, .break-card small, .access-strip small { color: var(--ink-soft); }
+.progress-detail { color: rgba(251, 249, 244, 0.8); }
+.task-menu, .setting-row > span:last-child { color: var(--ink-soft); }
+.task-heading h2 span { background: #ebe8df; color: var(--ink); }
+
+/* ---------- sketch pass: just a hand-drawn to-do list ---------- */
+.task-card, .break-card, .access-strip, .setting-row, .kr-card, .suggestion-card, .card,
+.empty-state, .calendar-event, .goal-card, .progress-card, .bubble, .user-bubble, .toast {
+  transform: none !important;
+  box-shadow: none !important;
+}
+.task-card::before { display: none; }
+
+/* tasks: plain lines with a checkbox */
+.task-card, .task-card:nth-of-type(n) {
+  background: transparent;
+  border: 0;
+  border-bottom: 1.5px dashed #bdb8a8;
+  border-radius: 0;
+  margin: 0;
+  padding: 14px 2px;
+}
+.task-card.done { background: transparent; opacity: 0.55; }
+.task-check {
+  box-shadow: none;
+  border-width: 2px;
+  border-radius: 4px;
+  background: transparent;
+}
+
+/* top card: a simple boxed note */
+.progress-card {
+  background: transparent;
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 5px 8px 6px 9px;
+}
+.progress-card h2, .progress-card .overline { color: var(--ink); }
+.progress-detail { color: var(--ink-soft); }
+.progress-line { background: #fff; border: 1.5px solid var(--ink); height: 9px; border-radius: 2px; }
+.progress-line i { background: var(--ink); border-radius: 0; }
+
+/* the small notes become plain text lines */
+.break-card, .access-strip {
+  background: transparent;
+  border: 0;
+  border-top: 1.5px dashed #bdb8a8;
+  border-radius: 0;
+  padding: 12px 2px;
+}
+.break-icon, .icon-btn, .goal-symbol { background: transparent; box-shadow: none; border: 1.5px solid var(--ink); }
+
+/* goals and settings: simple outlined boxes / lines */
+.goal-card { background: transparent; border: 1.5px solid var(--ink); border-radius: 5px 8px 6px 9px; }
+.setting-row { background: transparent; border: 0; border-bottom: 1.5px dashed #bdb8a8; border-radius: 0; }
+
+/* buttons: outlined, flat */
+.button { background: var(--ink); box-shadow: none; border-width: 1.5px; border-radius: 6px 9px 7px 9px; }
+.button:active { transform: none; opacity: 0.85; }
+.button.secondary, .button.ghost, .button.danger { background: transparent; }
+.add-task { border-width: 1.5px; }
+
+/* chat, toast, dialogs: flat */
+.bubble, .george-bubble .bubble { background: transparent; border: 1.5px solid #bdb8a8; border-radius: 6px; }
+.user-bubble { background: #ebe8df; border-radius: 6px; }
+.toast, .update-banner { border-radius: 6px; }
+dialog { box-shadow: none; border-width: 1.5px; }
+.george-home { background: transparent; border: 1.5px dashed #bdb8a8; border-radius: 6px; box-shadow: none; }
+.george-home small, .george-home span { color: var(--ink-soft); }
+.icon-btn.blue, .icon-btn { background: transparent; color: var(--ink); }
+
+/* ---------- handwriting, plain textured paper, smaller top card ---------- */
+body, button, input, select, textarea, dialog, .app-content {
+  font-family: var(--hand);
+}
+body { font-size: 17px; }
+h1, h2, h3, b, strong { font-weight: 400; }
+h1 { font-size: 34px; }
+.daily-header h1 { font-size: 30px; }
+.task-heading h2 { font-size: 26px; }
+.task-card b, .task-title b { font-size: 19px; font-weight: 400; }
+.task-title small, small, .small, .muted, .body-copy { font-size: 15px; }
+.section-label, .overline, .overline-dark { font-size: 14px; font-weight: 400; letter-spacing: 1.2px; }
+.button { font-size: 18px; font-weight: 400; }
+.setting-row b, .break-card b, .access-strip b, .george-home b { font-size: 18px; font-weight: 400; }
+nav button { font-size: 14px; }
+.field > span, .field-label { font-size: 16px; font-weight: 400; }
+.toast, .update-banner, .database-status { font-size: 15px; }
+.goal-card h2 { font-size: 26px; }
+.goal-bar-head, .goal-total { font-size: 14px; }
+
+/* paper: no ruled lines, just a warm sheet with a fine fibre texture */
+.app-content {
+  background-color: #faf7ef;
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .35  0 0 0 0 .3  0 0 0 0 .2  0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at 50% 0%, rgba(255, 255, 255, 0.7), transparent 60%),
+    linear-gradient(to right, rgba(120, 100, 60, 0.07), transparent 5%, transparent 95%, rgba(120, 100, 60, 0.07));
+  background-attachment: local, local, local;
+}
+.goal-card { background-image: none; }
+
+/* smaller "your first things" card */
+.progress-card { padding: 8px 14px 10px; margin: 0 0 2px; }
+.progress-card .overline { font-size: 12px; }
+.progress-card h2 { font-size: 20px; margin: 0; }
+.progress-detail { font-size: 14px; }
+.progress-card .progress-line { height: 6px; margin-top: 6px; }
