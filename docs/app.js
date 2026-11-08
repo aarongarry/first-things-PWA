@@ -34,10 +34,6 @@ let error = "",
   photoTask = "",
   photoError = "",
   photoBusy = false,
-  chatBusy = false,
-  chatError = false,
-  chatDraft = "",
-  pendingMessage = "",
   toastTimer,
   returnTo = "home",
   taskDraft = null,
@@ -370,7 +366,6 @@ function navigation(active) {
     ["home", "Today", "home"],
     ["goals", "Goals", "goal"],
     ["progress", "Progress", "chart"],
-    ["chat", "George", "chat"],
     ["settings", "Settings", "settings"],
   ]
     .map(
@@ -400,7 +395,6 @@ function render() {
     home: home,
     goals: goals,
     progress: progressReport,
-    chat: chat,
     settings: settings,
     locked: locked,
     lockscreen: lockscreen,
@@ -408,7 +402,7 @@ function render() {
   root.innerHTML = (map[s.screen] || home)();
   persistAccount();
   if (["calendar", "home", "settings"].includes(s.screen)) maybeLoadCalendar();
-  if (s.screen === "chat" || s.screen === "conversation")
+  if (s.screen === "conversation")
     root.scrollTop = root.scrollHeight;
   document.querySelector("#phone-time").textContent = new Date(
     now(s)
@@ -882,9 +876,7 @@ function home() {
       : ""
   }<button class="add-task" data-action="new-task">${icon(
     "plus"
-  )} Add a little first thing</button><button class="george-home" data-action="nav" data-to="chat">${avatar()}<span><b>Big task on your mind?</b><small>Let’s find a small place to start.</small></span>${icon(
-    "chat"
-  )}</button>${
+  )} Add a little first thing</button>${
     s.googleCalendar && cal.phase === "ready"
       ? '<div class="calendar-mini">' + icon("calendar") + " " + calendarLine() + "</div>"
       : ""
@@ -952,9 +944,7 @@ function goals() {
                     associated.length) *
                   100
                 : 0
-            }%"></i></div></div><button class="button secondary" data-action="goal-steps" data-id="${
-              g.id
-            }">${icon("spark")} Ask George for next steps</button>${
+            }%"></i></div></div>${
               associated.length
                 ? `<details><summary>See today’s steps</summary>${associated
                     .map(
@@ -972,60 +962,6 @@ function goals() {
   }<button class="add-task" data-action="new-goal">${icon(
     "plus"
   )} Add another goal</button></section>${navigation("goals")}`;
-}
-function chat() {
-  return `<section class="page chat-page"><div class="chat-header">${avatar()}<div><h1>George</h1><span>Your ${tones[
-    s.tone
-  ].label.toLowerCase()} first-things friend</span></div><span class="pill">DEMO AI</span></div><div class="chat-history">${bubble(
-    s.tone === "direct"
-      ? "Let’s choose one useful step. What needs your attention?"
-      : s.tone === "gentle"
-      ? "Hey, I’m here. We can make a big thing feel a little smaller."
-      : "Hey, " +
-        esc(s.profile.name) +
-        ". A little stuck, or just need a nudge? Let’s figure it out."
-  )}${s.messages
-    .map((m) =>
-      m.role === "user"
-        ? `<div class="user-bubble">${esc(m.text)}</div>`
-        : bubble(esc(m.text))
-    )
-    .join("")}${
-    chatBusy
-      ? bubble(
-          '<span class="typing">● ● ●</span> Thinking of a small next step…'
-        )
-      : ""
-  }${
-    chatError
-      ? `<div class="error">I couldn’t get a reply ready. Your message is safe.<button class="text-link" data-action="retry-chat">Try again</button></div>`
-      : ""
-  }${
-    s.chatSuggestions?.length
-      ? `<div class="chat-proposals"><p class="section-label">A FEW IDEAS — YOUR CHOICE</p>${s.chatSuggestions
-          .map(
-            (t) =>
-              `<div class="suggestion-card"><b>${esc(
-                t.title
-              )}</b><p class="small muted">${t.duration} min · ${esc(
-                t.why
-              )}</p><div class="row"><button class="button secondary compact" data-action="accept-chat-task" data-id="${
-                t.id
-              }">Add to today</button><button class="text-link" data-action="edit-chat-task" data-id="${
-                t.id
-              }">Adjust</button><button class="icon-btn" data-action="reject-chat-task" data-id="${
-                t.id
-              }" aria-label="Dismiss suggestion">${icon(
-                "close"
-              )}</button></div></div>`
-          )
-          .join("")}</div>`
-      : ""
-  }</div><div class="chips"><button data-action="chat-prompt" data-value="Help me break down my goal">Break down my goal</button><button data-action="chat-prompt" data-value="I’m feeling overwhelmed">I’m overwhelmed</button><button data-action="chat-prompt" data-value="Give me a little motivation">A little motivation</button></div><form class="composer" data-form="chat"><input name="message" aria-label="Message George" value="${esc(
-    chatDraft
-  )}" placeholder="What’s on your mind?" maxlength="1000"><button aria-label="Send message" ${
-    chatBusy ? "disabled" : ""
-  }>${icon("send")}</button></form></section>${navigation("chat")}`;
 }
 function settings() {
   return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>A little more you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">
@@ -1313,8 +1249,6 @@ function taskEditor(id = "", kind = "task") {
   const source =
     kind === "suggestion"
       ? s.suggestions
-      : kind === "chat"
-      ? s.chatSuggestions
       : s.tasks;
   const t = source?.find((x) => x.id === id) || {
     title: "",
@@ -1356,7 +1290,7 @@ function taskEditor(id = "", kind = "task") {
       )}</select></label><label class="toggle-label"><span><b>Verify with a photo</b><small>Optional. Otherwise, just check it off.</small></span><input type="checkbox" name="photo" ${
       t.photo ? "checked" : ""
     }></label><p class="small muted">This task goes on today’s list. Weekly repeats follow today’s weekday; monthly repeats follow the calendar day, or the last day in a shorter month.</p><div class="form-error" role="alert"></div><button class="button">${
-      kind === "chat" ? "Save suggestion" : id ? "Save changes" : "Add to today"
+      id ? "Save changes" : "Add to today"
     }</button>${
       id && kind === "task"
         ? `<button class="button danger" type="button" data-action="delete-task" data-id="${id}">Delete task${
@@ -1483,7 +1417,7 @@ function demo() {
             "Simulate next local midnight",
             "midnight",
             "secondary"
-          )}${btn("Fail George’s next reply", "fail-next-chat", "secondary")}`
+          )}`
         : ""
     }${btn(
       "Restart the new-user journey",
@@ -1558,62 +1492,6 @@ function breakDetail() {
         : btn("Back to my day", "close-modal")
     }`
   );
-}
-function respond(text, retry = false) {
-  if (chatBusy) return;
-  chatDraft = "";
-  if (!retry) s.messages.push({ role: "user", text });
-  pendingMessage = text;
-  chatError = false;
-  chatBusy = true;
-  s.screen = "chat";
-  render();
-  setTimeout(() => {
-    chatBusy = false;
-    if (s.failNextChat) {
-      s.failNextChat = false;
-      chatError = true;
-      render();
-      return;
-    }
-    const g = s.goals.find((g) => g.id === s.chatGoal) || s.goals[0];
-    s.chatGoal = "";
-    let response;
-    if (/overwhelm|stress|hard|tired/i.test(text))
-      response =
-        s.tone === "direct"
-          ? "Make the task smaller. Pick one thing you can do in five minutes, then reassess."
-          : s.tone === "gentle"
-          ? "You don’t have to carry the whole day at once. Take a breath; we can choose a five-minute start."
-          : "Let’s turn the volume down a little. One small task, then a pause to see how you feel.";
-    else if (/motiv|encourag/i.test(text))
-      response =
-        s.tone === "direct"
-          ? "Your next move doesn’t need to be impressive. It needs to be small enough to start. Pick your first unfinished task."
-          : s.tone === "gentle"
-          ? "A slow start is still a start. You’re allowed to take this one little thing at a time."
-          : "You don’t need a perfect day to make progress. Your next small win is right there.";
-    else {
-      response = `${
-        s.tone === "direct"
-          ? "Let’s make it actionable."
-          : s.tone === "gentle"
-          ? "We can take this gently."
-          : "Let’s find an easy place to start."
-      } ${
-        g
-          ? `For “${g.title},” here are a couple of small steps.`
-          : "Here are two little steps you could try."
-      } ${
-        s.answers[2]
-          ? `You mentioned “${s.answers[2]}” — keep the first step short.`
-          : ""
-      } Add only what works for you.`;
-      s.chatSuggestions = suggest(s, g).slice(0, 2);
-    }
-    s.messages.push({ role: "george", text: response });
-    render();
-  }, 850);
 }
 function completeOnboarding(approve) {
   if (approve)
@@ -1866,35 +1744,6 @@ document.addEventListener("click", async (e) => {
       render();
       toast("Goal removed. Its daily tasks are still yours.");
       break;
-    case "goal-steps":
-      s.chatGoal = id;
-      go("chat");
-      respond(
-        "Help me find smaller steps for " +
-          s.goals.find((g) => g.id === id).title
-      );
-      break;
-    case "chat-prompt":
-      respond(v);
-      break;
-    case "retry-chat":
-      respond(pendingMessage, true);
-      break;
-    case "accept-chat-task": {
-      const t = s.chatSuggestions.find((t) => t.id === id);
-      addTask(s, t);
-      s.chatSuggestions = s.chatSuggestions.filter((t) => t.id !== id);
-      render();
-      toast("“" + t.title + "” added to today.");
-      break;
-    }
-    case "edit-chat-task":
-      taskEditor(id, "chat");
-      break;
-    case "reject-chat-task":
-      s.chatSuggestions = s.chatSuggestions.filter((t) => t.id !== id);
-      render();
-      break;
     case "settings-page":
       go(el.dataset.to);
       break;
@@ -2045,12 +1894,6 @@ document.addEventListener("click", async (e) => {
       );
       break;
     }
-    case "fail-next-chat":
-      s.failNextChat = true;
-      closeModal();
-      go("chat");
-      toast("Demo: George’s next reply will fail, with a retry option.");
-      break;
     case "sample-day": {
       if (USE_SUPABASE) { toast("Switch off Supabase in the config to use sample data."); break; }
       s = initial();
@@ -2142,9 +1985,6 @@ if (e.target.id === "avatar-upload") {
 }
 
 });
-document.addEventListener("input", (e) => {
-  if (e.target.name === "message") chatDraft = e.target.value;
-});
 document.addEventListener("submit", async (e) => {
   const form = e.target;
   if (!form.dataset.form) return;
@@ -2221,9 +2061,8 @@ document.addEventListener("submit", async (e) => {
         fail("Choose a duration from 1 to 1,440 minutes, or leave it blank.");
         break;
       }
-      if (taskDraft.kind === "suggestion" || taskDraft.kind === "chat") {
-        const source =
-          taskDraft.kind === "chat" ? s.chatSuggestions : s.suggestions;
+      if (taskDraft.kind === "suggestion") {
+        const source = s.suggestions;
         Object.assign(
           source.find((t) => t.id === taskDraft.id),
           data
@@ -2296,9 +2135,6 @@ document.addEventListener("submit", async (e) => {
       }
       break;
     }
-    case "chat":
-      if (values.message.trim()) respond(values.message.trim());
-      break;
   }
 });
 modal.addEventListener("cancel", (e) => {

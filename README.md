@@ -129,7 +129,7 @@ Because an account's saved state only holds the current day, `supabase/okr-repor
 
 **Optional integrations:** an Apple Shortcuts Instagram reminder uses real synced task/break status, after manual setup on each iPhone. Google Calendar connects for real with read-only access (see below).
 
-**Simulated:** the in-app blocking preview, George AI, photo verification, and lock-screen notifications. A PWA cannot enforce a native iPhone app lock.
+**Simulated:** the in-app blocking preview, photo verification, and lock-screen notifications. A PWA cannot enforce a native iPhone app lock.
 
 ## Development
 
