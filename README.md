@@ -107,12 +107,18 @@ Apple references: [App triggers](https://support.apple.com/en-om/guide/shortcuts
 - First use on a new device needs internet to load an existing cloud account. An uncached number used offline can start locally and merge when connected.
 - Signing out keeps local accounts and pending edits. Clearing website data/removing app storage can erase changes that have not synced.
 - Independent task additions and field edits merge. For the same field, the device syncing its pending edit last wins. Deleting an item wins over a stale edit to it. Server revisions prevent a stale full snapshot from silently overwriting newer data.
-- The top status shows **All changes synced**, **Offline**, or a retryable problem. A local-storage failure is shown separately; keep the app open if that occurs.
+- The top status shows **All changes synced**, **Offline**, or a retryable problem. Routine messages (**Saved on this device**, **Syncing…**, **All changes synced**) appear as a small pill and fade after a couple of seconds; offline, errors, a changed phone number, and local-storage failures stay on screen as a banner until fixed. To keep the status visible all the time (for example while following the steps above or during a demo), add `?status=on` to the address, such as `.../index.html?status=on`. A local-storage failure is shown separately; keep the app open if that occurs.
 - App updates download a complete new shell and offer **New version ready**. Tapping it saves local changes before reloading. Account data is separate from the app cache.
+
+## Task options and ending a break
+
+- **Priority.** Each task can be **High**, **Normal**, or **Low**. Today's list shows unfinished tasks in that order, and high-priority tasks get a "High priority" label and an accent edge. Priority does not change how breaks are earned.
+- **Reminder only.** A task marked *Reminder only* is a note to yourself. It never pauses apps, never earns a break, and is left out of the progress ring, the iPhone reminder check, and the Progress report's Key Results.
+- **End break early.** While a break is running, tap **End** on the break card (or **End break early** in the break details). If you used **less than 20%** of the 10 minutes (under 2 minutes), the break goes back to your bank. Ending after that forfeits the rest. A banked break can only be returned once, so ending and restarting cannot be used to get free time. The app explains which case applies before you confirm. As with the iPhone reminder, apps pause again once the change syncs.
 
 ## Progress report (OKR Key Results)
 
-The **Progress** tab shows our 2 Objectives and 4 Key Results. None of the numbers are hard-coded: the database calculates them from real activity when the screen opens, after each sync, and every 10 seconds while it stays open, so what people do on their own phones moves the numbers.
+The Progress report shows our 2 Objectives and 4 Key Results. It is not in the bottom navigation; open it by adding `#progress` to the app's address (for example `.../index.html#progress`) while signed in. None of the numbers are hard-coded: the database calculates them from real activity when the screen opens, after each sync, and every 10 seconds while it stays open, so what people do on their own phones moves the numbers.
 
 | Objective | Key Result | Target | How it is calculated |
 |---|---|---|---|
@@ -154,6 +160,8 @@ Run **`supabase/pwa-demo-accounts.sql`** when setting up the project or upgradin
 For the Instagram integration, also run **`supabase/instagram-shortcut.sql`** after the demo-account migration. This repeatable script creates account-linked status keys and two narrow RPCs. `first_things_instagram_status` supports GET with the publishable `apikey` header, uses server time and the configured time zone, and returns only `decision` (`allow`, `pause`, or `refresh`) and `message` with `Cache-Control: no-store`. It never changes task data. `tests/instagram-status.sql` runs database behavior checks in a rolled-back transaction.
 
 For the **Progress** tab, also run **`supabase/okr-report.sql`** after the demo-account migration. This repeatable script adds a small per-day activity log that fills itself in whenever an account is saved, and the `first_things_okrs` RPC that calculates the four Key Results. The log trigger can never block a save, and the RPC returns totals only (no names, phone numbers, or tasks). `tests/okr-report.sql` checks the math, the 7-day window, phone-number changes, and permissions in a rolled-back transaction.
+
+For **Reminder only** tasks, also run **`supabase/task-options.sql`** after `okr-report.sql` and `instagram-shortcut.sql`. This repeatable script updates the iPhone status checks and the daily activity log so reminder-only tasks are ignored. It replaces function bodies only; no tables or data change.
 
 `supabase/setup.sql` and the original user/goal/task/daily ERD remain available for the earlier authenticated vertical slice. The migration does not alter or expose those records. When an old browser login and its still-valid anonymous session are present, the app imports those tasks into that remembered phone account once. An expired old session or a different browser may require a manual team-assisted transfer; old records remain in the original tables.
 

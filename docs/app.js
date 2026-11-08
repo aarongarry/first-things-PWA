@@ -11,6 +11,9 @@ import {
   completeTask,
   photoAttempt,
   startBreak,
+  endBreak,
+  breakEndPreview,
+  urgencyRank,
   rollover,
   deleteGoal,
   suggest,
@@ -54,6 +57,13 @@ let storageFailed = false;
 // Progress report: Key Results are calculated by the database (first_things_okrs)
 // from everyone's real activity. Nothing on that screen is hard-coded.
 let okr = { phase: "idle", data: null, message: "", requestId: 0 };
+// The sync status stays out of the way when all is well: routine messages ("Saved on this
+// device", "Syncing…", "All changes synced") float over the top as a small pill and fade
+// away. Anything that needs attention (offline, errors, a changed phone number, a
+// storage problem) stays as a banner until it is fixed. Add ?status=on to the address to
+// keep the banner visible all the time, for example during a demo.
+const alwaysShowStatus = new URL(location.href).searchParams.get("status") === "on";
+let statusFadeTimer;
 function databaseStatus(phase, message = "") {
   const element = document.querySelector("#database-status");
   const labels = {
@@ -67,6 +77,14 @@ function databaseStatus(phase, message = "") {
   };
   element.textContent = labels[phase] || message;
   element.dataset.phase = phase;
+  const routine = ["local", "syncing", "saved"].includes(phase) && !alwaysShowStatus;
+  element.classList.toggle("floating", routine);
+  element.classList.remove("faded");
+  clearTimeout(statusFadeTimer);
+  // "Syncing…" stays until the sync finishes; the other two fade after a moment.
+  if (routine && phase !== "syncing") {
+    statusFadeTimer = setTimeout(() => element.classList.add("faded"), 2500);
+  }
   if (phase === "moved") {
     root.inert = true;
     const button = document.createElement("button");
@@ -88,7 +106,10 @@ const accounts = createAccountStore({
   remote: cloud,
   online: () => navigator.onLine,
   report(phone, phase, message) {
-    if (phone === activePhone && !storageFailed) databaseStatus(phase, message);
+    // Already showing "All changes synced"? A routine check has nothing to announce.
+    // (Edits switch the status to "Saved on this device" first, so real saves still show.)
+    const quiet = (phase === "syncing" || phase === "saved") && document.querySelector("#database-status")?.dataset.phase === "saved";
+    if (phone === activePhone && !storageFailed && !quiet) databaseStatus(phase, message);
     // A sync just finished, so the Key Results may have moved.
     if (phase === "saved" && phone === activePhone && s.screen === "progress") void refreshOkrs();
   },
@@ -107,11 +128,15 @@ const accounts = createAccountStore({
   changed(phone, snapshot) {
     if (phone !== activePhone || storageFailed) return;
     const wasOnboarded = s.onboarded;
+    const before = JSON.stringify(accountSnapshot(s));
     applySnapshot(s, snapshot);
     lastSnapshot = accountSnapshot(s);
     if (!wasOnboarded && s.onboarded) s.screen = "home";
     rememberLogin();
-    if (!modal.open && !document.activeElement?.matches('input, textarea, select')) render();
+    // The background check runs every 30 seconds. If nothing is new, leave the screen
+    // alone: redrawing it makes images and layout flicker for no reason.
+    const somethingNew = JSON.stringify(lastSnapshot) !== before || (!wasOnboarded && s.onboarded);
+    if (somethingNew && !modal.open && !document.activeElement?.matches('input, textarea, select')) render();
   },
 });
 function persistAccount() {
@@ -232,7 +257,7 @@ const icons = {
   home: '<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/>',
   goal: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/>',
   chat: '<path d="M21 11a9 9 0 0 1-9 9H4l-2 2v-10a9 9 0 1 1 19-1Z"/><path d="M7 11h10M7 15h6"/>',
-settings: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/>',
+settings: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
 unlock:
     '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 7-2M12 14v3"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -313,6 +338,24 @@ const apps = [
     desc: "Catch up after a small win",
   },
 ];
+function resizeAvatar(file, size = 256) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const side = Math.min(img.naturalWidth, img.naturalHeight);
+      if (!side) return reject(Error("empty image"));
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(Error("bad image")); };
+    img.src = url;
+  });
+}
 function toast(message) {
   clearTimeout(toastTimer);
   const el = document.querySelector("#toast");
@@ -365,7 +408,6 @@ function navigation(active) {
   return `<nav class="nav" aria-label="Main navigation">${[
     ["home", "Today", "home"],
     ["goals", "Goals", "goal"],
-    ["progress", "Progress", "chart"],
     ["settings", "Settings", "settings"],
   ]
     .map(
@@ -407,7 +449,36 @@ function render() {
   document.querySelector("#phone-time").textContent = new Date(
     now(s)
   ).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  syncHistory();
 }
+
+// ---- Back button support ----
+// Every screen change is saved as a browser history entry, so the phone's Back
+// gesture/button returns to the previous screen instead of leaving the app.
+const ONBOARDING_SCREENS = ["welcome", "tone", "conversation", "firstGoal", "calendar", "apps", "breaks", "tutorial", "suggestions"];
+const MAIN_SCREENS = ["home", "goals", "progress", "settings", "locked", "lockscreen"];
+function syncHistory() {
+  if (history.state?.ft === s.screen) return; // already recorded (also true right after Back)
+  // Keep the hidden Progress route in the address; every other screen uses the plain address.
+  const url = location.pathname + location.search + (s.screen === "progress" ? "#progress" : "");
+  // The first entry of a visit has no screen saved yet, so tag it instead of adding a second one.
+  if (history.state?.ft === undefined) history.replaceState({ ft: s.screen }, "", url);
+  else history.pushState({ ft: s.screen }, "", url);
+}
+window.addEventListener("popstate", (event) => {
+  const target = event.state?.ft;
+  if (!target) return;
+  // Only show a screen that still makes sense. For example, after setup is finished,
+  // Back should not return to the setup steps, so skip over those entries.
+  const allowed = !activePhone ? ["welcome"] : s.onboarded ? MAIN_SCREENS : ONBOARDING_SCREENS;
+  if (!allowed.includes(target)) { history.back(); return; }
+  closeModal();
+  error = "";
+  s.screen = target;
+  render();
+  root.scrollTop = 0;
+  if (target === "progress") void refreshOkrs();
+});
 function welcome() {
   return `<section class="page welcome"><div class="wordmark"><span class="brand-mark">✓</span>first things<span class="brand-period">.</span></div><div class="hero-art"><img src="george.png" alt="George, your friendly blue companion"><span class="hello">Hey, I’m George!</span></div><h1>First, your goals.<br><span>Then, your scroll.</span></h1><p class="body-copy">Make a little progress on what matters.<br>Unlock a little time for everything else.</p><form data-form="signup" novalidate><label class="field"><span>Your name <small>(optional for returning users)</small></span><input name="name" value="${esc(
     s.profile.name
@@ -525,7 +596,7 @@ function firstGoal() {
     3,
     `<form data-form="first-goal" novalidate><label class="field"><span>My bigger goal</span><textarea name="title" placeholder="Feel ready for my final exams" maxlength="180">${esc(
       s.goalDraftTitle ?? g?.title ?? ""
-    )}</textarea></label><div class="chips"><button type="button" data-action="goal-example" data-value="Feel ready for my final exams">Be ready for finals</button><button type="button" data-action="goal-example" data-value="Build a consistent fitness routine">Move more</button></div><label class="field"><span>Target date</span><input type="date" name="target" value="${
+    )}</textarea></label><div class="chips"><button type="button" data-action="goal-example" data-value="Feel ready for my final exams">Be ready for finals</button><button type="button" data-action="goal-example" data-value="Build a consistent fitness routine">Move more</button></div><label class="field"><span>Target date</span><input type="date" min="${localDay()}" name="target" value="${
       s.goalDraftTarget ?? g?.target ?? localDay(now(s) + 30 * 86400000)
     }"></label><p class="small muted">A direction to work toward, not a deadline for every task. You can always change it.</p>${
       error ? `<div class="error" role="alert">${esc(error)}</div>` : ""
@@ -662,7 +733,7 @@ function appSelection() {
           }" aria-pressed="${s.selectedApps.includes(
             a.name
           )}"><span class="app-logo" style="background:${a.color}">${
-            a.short
+            `<img src="icons/apps/${a.name.toLowerCase()}.svg" alt="" width="28" height="28">`
           }</span><span><b>${a.name}</b><small>${
             a.desc
           }</small></span><span class="check-small">${
@@ -673,7 +744,7 @@ function appSelection() {
       s.selectedApps.length
         ? `${s.selectedApps.length} apps selected. Changes apply immediately.`
         : "No apps selected. You can still track your tasks; no apps will be restricted."
-    }</div><p class="small muted">This prototype demonstrates app blocking inside the demo only. It doesn’t control your device.</p>`,
+    }</div><p class="small muted">On iPhone, set up each selected app in Settings → App shortcuts. Desktop selection syncs to your phone; it does not block laptop apps.</p>`,
     btn(s.onboarded ? "Done" : "Keep these distractions for later", "apps-next")
   );
 }
@@ -801,7 +872,8 @@ function home() {
   const st = stats(s);
   const name = s.profile.name || "friend";
   const done = s.tasks.filter((t) => t.done),
-    todo = s.tasks.filter((t) => !t.done);
+    todo = s.tasks.filter((t) => !t.done).sort((x, y) => urgencyRank(x) - urgencyRank(y)),
+    reminderNote = st.reminders ? ` · ${st.reminders} reminder${st.reminders === 1 ? "" : "s"}` : "";
   return `<section class="page daily"><header class="daily-header"><div><span class="section-label">${today()}</span><h1>Your day, ${esc(
     name
   )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${esc(
@@ -811,10 +883,12 @@ function home() {
       ? st.remaining === 0
         ? "Look at you go."
         : `${st.remaining} little step${st.remaining === 1 ? "" : "s"} left.`
+      : s.tasks.length
+      ? "Just reminders today."
       : "A fresh start."
   }</h2><span class="progress-detail">${st.done} of ${
     st.total
-  } tasks complete</span></div><div class="progress-ring" style="--progress:${
+  } tasks complete${reminderNote}</span></div><div class="progress-ring" style="--progress:${
     st.percent
   }%"><span><b>${
     st.percent
@@ -849,15 +923,17 @@ function home() {
   }</b><small>${nextBreakText()}</small></div>${
     st.banked && st.remaining && !st.active
       ? '<button data-action="start-break">Start</button>'
-      : `<button data-action="break-detail" aria-label="Break details">${icon(
+      : `${
+          st.active ? '<button data-action="end-break">End</button>' : ""
+        }<button data-action="break-detail" aria-label="Break details">${icon(
           "clock"
         )}</button>`
   }</div><div class="task-heading"><h2>Today’s list <span>${
-    st.total
+    s.tasks.length
   }</span></h2><button class="icon-btn blue" data-action="new-task" aria-label="Add a task">${icon(
     "plus"
   )}</button></div>${
-    !st.total
+    !s.tasks.length
       ? `<div class="empty-state">${icon(
           "spark"
         )}<h3>A little space for possibility.</h3><p>Add something you want to do today.<br>A few words are all you need.</p>${btn(
@@ -888,7 +964,7 @@ function taskRow(t) {
   const goal = s.goals.find((g) => g.id === t.goalId);
   return `<div class="task-card ${
     t.done ? "completed" : ""
-  }"><button class="task-check" data-action="toggle-task" data-id="${
+  } ${t.urgency === "high" ? "urgency-high" : ""}"><button class="task-check" data-action="toggle-task" data-id="${
     t.id
   }" aria-label="${t.done ? "Mark incomplete:" : "Complete:"} ${esc(
     t.title
@@ -900,6 +976,8 @@ function taskRow(t) {
     [
       t.duration ? `${t.duration} min` : null,
       t.recurrence !== "none" ? t.recurrence : null,
+      t.urgency === "high" ? "High priority" : t.urgency === "low" ? "Low priority" : null,
+      t.reminder ? "Reminder only" : null,
       t.photo ? "Photo check" : null,
       goal?.title,
     ]
@@ -914,10 +992,33 @@ function taskRow(t) {
     t.id
   }" aria-label="Edit ${esc(t.title)}">${icon("more")}</button></div>`;
 }
+const DAY_MS = 86400000;
+const dayNumber = (day) => Math.round(new Date(day + "T12:00:00").getTime() / DAY_MS);
+function goalMeta(g, associated) {
+  const todayKey = localDay(now(s));
+  const left = dayNumber(g.target) - dayNumber(todayKey);
+  const tone = left < 0 ? "over" : left <= 7 ? "soon" : "ok";
+  const label =
+    left < 0 ? `Overdue by ${-left} day${left === -1 ? "" : "s"}`
+    : left === 0 ? "Due today"
+    : left === 1 ? "1 day left"
+    : `${left} days left`;
+  const done = associated.filter((t) => t.done).length;
+  const todayPct = associated.length ? Math.round((done / associated.length) * 100) : 0;
+  let timeBar = "";
+  if (g.created) {
+    const span = Math.max(1, dayNumber(g.target) - dayNumber(g.created));
+    const pct = Math.max(0, Math.min(100, Math.round(((dayNumber(todayKey) - dayNumber(g.created)) / span) * 100)));
+    timeBar = `<div class="goal-bar"><div class="goal-bar-head"><span>Time passed</span><b>${pct}%</b></div><div class="goal-track"><i class="time ${tone}" style="width:${pct}%"></i></div></div>`;
+  }
+  const finished = g.stepsDone || 0;
+  return `<div class="goal-due"><span class="due-pill ${tone}">${icon("calendar")} ${label}</span><span class="small muted">Target ${dateText(g.target)}</span></div>${timeBar}<div class="goal-bar"><div class="goal-bar-head"><span>Today’s steps</span><b>${done} of ${associated.length}</b></div><div class="goal-track"><i style="width:${todayPct}%"></i></div></div><p class="goal-total">${finished ? `<b>${finished}</b> step${finished === 1 ? "" : "s"} finished toward this goal` : "Finish a step to start your count"}</p>`;
+}
 function goals() {
+  const totalSteps = s.goals.reduce((n, g) => n + (g.stepsDone || 0), 0);
   return `<section class="page"><div class="page-top"><span class="section-label">THE BIGGER PICTURE</span><button class="icon-btn blue" data-action="new-goal" aria-label="Add goal">${icon(
     "plus"
-  )}</button></div><h1>Things worth<br>working toward<span class="blue">.</span></h1><p class="body-copy">Your daily steps have somewhere to go.</p>${
+  )}</button></div><h1>Things worth<br>working toward<span class="blue">.</span></h1><p class="body-copy">${totalSteps ? `${totalSteps} step${totalSteps === 1 ? "" : "s"} finished across your goals.` : "Your daily steps have somewhere to go."}</p>${
     s.goals.length
       ? s.goals
           .map((g, i) => {
@@ -930,21 +1031,7 @@ function goals() {
               "edit"
             )}</button></div><h2>${esc(
               g.title
-            )}</h2><div class="small muted">${icon(
-              "calendar"
-            )} Target: ${dateText(
-              g.target
-            )}</div><div class="goal-progress"><span>${
-              associated.filter((t) => t.done).length
-            } of ${
-              associated.length
-            } associated tasks done today</span><div><i style="width:${
-              associated.length
-                ? (associated.filter((t) => t.done).length /
-                    associated.length) *
-                  100
-                : 0
-            }%"></i></div></div>${
+            )}</h2>${goalMeta(g, associated)}${
               associated.length
                 ? `<details><summary>See today’s steps</summary>${associated
                     .map(
@@ -974,13 +1061,8 @@ function settings() {
   )}</small></div><button class="text-link profile-edit" data-action="profile" aria-label="Edit profile">Edit ${icon(
     "edit"
   )}</button>
-  <label class="text-link profile-upload">
-  <input
-    type="file"
-    id="avatar-upload"
-    accept="image/png,image/jpeg,image/webp"
-    hidden
-  >
+  <label for="avatar-upload" class="text-link profile-upload">
+  <input type="file" id="avatar-upload" accept="image/png,image/jpeg,image/webp" style="display:none;">
   <span>Change Photo</span>
 </label>
   </div><p class="section-label">YOUR DAILY RHYTHM</p>${[
@@ -1014,7 +1096,7 @@ function settings() {
     )
     .join(
       ""
-    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>Instagram shortcut</b><small>Set up your iPhone reminder</small></span><span>›</span></button><p class="section-label" style="margin-top:27px">
+    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>App shortcuts</b><small>Set up your iPhone reminder</small></span><span>›</span></button>
     <button class="setting-row" data-action="share-app">
   ${icon("send")}
   <span>
@@ -1031,7 +1113,7 @@ function settings() {
   </span>
   <span>›</span>
 </button>
-EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
+<p class="section-label" style="margin-top:27px">EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
     "phone"
   )}<span><b>Try a distracting app</b><small>See why it’s paused or unlocked</small></span><span>›</span></button><button class="setting-row" data-action="lockscreen">${icon(
     "lock"
@@ -1043,8 +1125,17 @@ EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${ic
     "settings"
   )}`;
 }
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); return; } catch { /* Older browsers need selection. */ }
+  const field = document.createElement("textarea");
+  field.value = text; field.style.position = "fixed"; field.style.opacity = "0";
+  document.body.append(field); field.focus(); field.select(); field.setSelectionRange(0, text.length);
+  const copied = document.execCommand("copy"); field.remove();
+  if (!copied) throw Error("Select the setup value and copy it manually.");
+}
 let instagramConfig;
-async function instagramSetup() {
+async function instagramSetup(appName = "Instagram") {
+  if (!apps.some(app => app.name === appName)) return;
   instagramConfig = null;
   openModal("A pause before Instagram.", '<p>Connecting your synced account…</p>');
   const version = modalVersion, phone = activePhone;
@@ -1056,28 +1147,28 @@ async function instagramSetup() {
     if (!record?.linked || record.retired || record.pendingMove || JSON.stringify(record.local) !== JSON.stringify(record.base))
       throw Error("Wait for All changes synced, then try again.");
     const { access_key } = await createCloud().shortcut(phone);
-    const config = shortcutConfig(access_key, Intl.DateTimeFormat().resolvedOptions().timeZone, location.href);
+    const config = shortcutConfig(access_key, Intl.DateTimeFormat().resolvedOptions().timeZone, location.href, appName);
     if (version !== modalVersion || phone !== activePhone) return;
     instagramConfig = config;
     const field = (label, key) => `<label class="field"><span>${label}</span><textarea readonly rows="2" data-shortcut-value="${key}">${esc(config[key])}</textarea></label><button class="text-link" data-action="shortcut-copy" data-value="${key}">Copy ${label.toLowerCase()}</button>`;
-    openModal("A pause before Instagram.", `<p>When Instagram opens, your shortcut checks your synced list. It leaves Instagram open during a break or after your tasks are done. Otherwise, it opens a reminder.</p>
-      <p class="small muted">Online demo · Set up once on your iPhone · Can be disabled in Shortcuts</p>
-      <button class="button" data-action="shortcut-check">Test my Instagram check</button><p id="shortcut-result" role="status"></p>
+    openModal("A pause before ${esc(appName)}.", `<div class="chips">${apps.map(app => `<button data-action="instagram-setup" data-value="${app.name}">${app.name}</button>`).join("")}</div><p>When ${esc(appName)} opens, your shortcut checks your synced list. It leaves ${esc(appName)} open during a break or after your tasks are done. Otherwise, it opens a reminder.</p>
+      <p class="small muted"> Set up once on your iPhone · Can be disabled in Shortcuts</p>
+      <button class="button" data-action="shortcut-check">Test my ${esc(appName)} check</button><p id="shortcut-result" role="status"></p>
       <details class="shortcut-guide"><summary>1. Create “Check First Things”</summary><ol>
       <li>Open Apple <b>Shortcuts</b> and create a shortcut named <b>Check First Things</b>.</li>
       <li>Add <b>URL</b> and paste the Check URL below.</li>
       <li>Add <b>Get Contents of URL</b>. Use <b>GET</b>. Expand its options, add a header named <b>apikey</b>, and paste the API key below as its value.</li>
       <li>Add <b>Get Dictionary Value</b>. Get the value for <b>decision</b> from Contents of URL.</li>
       <li>Add <b>If</b>: Dictionary Value <b>is</b> <b>allow</b>. Inside this branch add <b>Nothing</b>.</li>
-      <li>Inside <b>Otherwise</b>, add <b>URL</b> with the Reminder URL below, then <b>Open URLs</b> using that URL. Keep these actions before <b>End If</b>.</li>
-      <li>Run it once and allow its connection to our Supabase project and opening the reminder when prompted. Don’t add an Open Instagram action; Instagram is already open when the automation runs.</li></ol></details>
-      <details class="shortcut-guide"><summary>2. Run it when Instagram opens</summary><ol>
+      <li>Inside <b>Otherwise</b>, first add <b>Go to Home Screen</b> to leave the app, then add <b>URL</b> with the Reminder URL below, then <b>Open URLs</b> using that URL. Keep these actions before <b>End If</b>.</li>
+      <li>Run it once and allow its connection to our Supabase project and opening the reminder when prompted. Don’t add an Open ${esc(appName)} action; ${esc(appName)} is already open when the automation runs.</li></ol></details>
+      <details class="shortcut-guide"><summary>2. Run it when ${esc(appName)} opens</summary><ol>
       <li>In Shortcuts, add an automation with the <b>App</b> trigger. Depending on your Shortcuts layout, use Automation → + or add an automation trigger to a shortcut.</li>
-      <li>Select <b>Instagram</b> and <b>Is Opened</b>, then choose <b>Run Immediately</b>.</li>
+      <li>Select <b>${esc(appName)}</b> and <b>Is Opened</b>, then choose <b>Run Immediately</b>.</li>
       <li>Choose <b>Check First Things</b> (or add <b>Run Shortcut</b> and select it). Save the automation.</li>
-      <li>In First Things → Restricted apps, select Instagram. Add an unfinished task and wait for <b>All changes synced</b>. Open Instagram to test the redirect.</li></ol></details>
-      <details class="shortcut-guide"><summary>3. Copy your setup values</summary>${field("Check URL", "url")}${field("API key", "apiKey")}${field("Reminder URL", "reminder")}<p class="small muted">Time zone: ${esc(config.zone)}. If you travel to a different time zone, reopen this setup and replace the Check URL. Your link follows phone-number changes. Keep it private: it can read your Instagram access status.</p></details>
-      <p class="small muted">Open First Things each morning and after edits; wait for All changes synced. Offline requests may stop with a Shortcuts error and leave Instagram open. A break ending won’t close an app that’s already open. The reminder may open in Safari; your Home Screen app keeps its own session.</p>`);
+      <li>In First Things → Restricted apps, select ${esc(appName)}. Add an unfinished task and wait for <b>All changes synced</b>. Open ${esc(appName)} to test the redirect.</li></ol></details>
+      <details class="shortcut-guide"><summary>3. Copy your setup values</summary>${field("Check URL", "url")}${field("API key", "apiKey")}${field("Reminder URL", "reminder")}<p class="small muted">Time zone: ${esc(config.zone)}. If you travel to a different time zone, reopen this setup and replace the Check URL. Your link follows phone-number changes. Keep it private: it can read your ${esc(appName)} access status.</p></details>
+      <p class="small muted">Open First Things each morning and after edits; wait for All changes synced. Offline requests may stop with a Shortcuts error and leave ${esc(appName)} open. A break ending won’t close an app that’s already open. The reminder may open in Safari; your Home Screen app keeps its own session.</p><p class="small muted">Repeated opening can outrun iOS automations. Run Immediately and Go to Home Screen reduce the window, but Shortcuts cannot guarantee an app lock.</p>`);
   } catch (problem) {
     if (version === modalVersion && phone === activePhone) openModal("Let’s reconnect.", `<p>${esc(problem.message)}</p><button class="button" data-action="instagram-setup">Try again</button>`);
   }
@@ -1101,9 +1192,19 @@ async function refreshOkrs() {
   paintOkrs();
 }
 // Only the report body is swapped, so the page doesn't jump or lose its scroll position.
+let lastOkrCards = "";
 function paintOkrs() {
   const el = document.querySelector("#okr-report");
-  if (el) el.innerHTML = okrBody();
+  if (!el) return;
+  const { cards, note } = okrParts();
+  if (cards === lastOkrCards) {
+    // Same numbers: only refresh the "Updated" time, so nothing flashes every 10 seconds.
+    const label = el.querySelector(".okr-updated");
+    if (label && note) label.textContent = note;
+    return;
+  }
+  lastOkrCards = cards;
+  el.innerHTML = okrBody();
 }
 // While the Progress screen is open, re-read the numbers every 10 seconds. That
 // way activity from other people's phones moves the numbers on this screen
@@ -1134,13 +1235,20 @@ function krCard(kr, noun) {
     detail
   )}</p></article>`;
 }
-function okrBody() {
+// The report has two parts: the Key Result cards and a small "Updated" note whose
+// time changes on every refresh. They are split so the cards are only redrawn when
+// their numbers change, while the note keeps ticking.
+function okrParts() {
   if (!cloud)
-    return '<p class="info-note">Key Results are calculated by the database. Turn on Supabase to see them.</p>';
+    return { cards: '<p class="info-note">Key Results are calculated by the database. Turn on Supabase to see them.</p>', note: "" };
   if (!okr.data) {
-    return okr.phase === "error"
-      ? `<p class="error" role="alert">Couldn’t load Key Results: ${esc(okr.message)}</p>`
-      : '<p class="info-note">Loading Key Results…</p>';
+    return {
+      cards:
+        okr.phase === "error"
+          ? `<p class="error" role="alert">Couldn’t load Key Results: ${esc(okr.message)}</p>`
+          : '<p class="info-note">Loading Key Results…</p>',
+      note: "",
+    };
   }
   const d = okr.data;
   const when = new Date(d.generatedAt).toLocaleTimeString("en-US", {
@@ -1152,7 +1260,7 @@ function okrBody() {
     okr.phase === "error"
       ? "Couldn’t refresh just now · showing " + when
       : "Updated " + when + " · refreshes every 10 seconds";
-  return `<p class="overline-dark">OBJECTIVE 1</p><h2 class="obj-title">${esc(d.objective1.title)}</h2>${krCard(
+  const cards = `<p class="overline-dark">OBJECTIVE 1</p><h2 class="obj-title">${esc(d.objective1.title)}</h2>${krCard(
     d.objective1.kr1,
     "tasks completed"
   )}${krCard(d.objective1.kr2, "daily lists finished")}<p class="overline-dark">OBJECTIVE 2</p><h2 class="obj-title">${esc(
@@ -1160,10 +1268,15 @@ function okrBody() {
   )}</h2>${krCard(d.objective2.kr3, "")}${krCard(
     d.objective2.kr4,
     "people active 3+ days this week"
-  )}<p class="okr-updated">${esc(note)}</p>`;
+  )}`;
+  return { cards, note };
+}
+function okrBody() {
+  const { cards, note } = okrParts();
+  return cards + (note ? `<p class="okr-updated">${esc(note)}</p>` : "");
 }
 function progressReport() {
-  return `<section class="page progress-page"><header><span class="section-label">PROGRESS REPORT</span><h1>What First Things is doing</h1><p class="body-copy">Live numbers from everyone using the app. They move as people check off their first things.</p></header><div id="okr-report">${okrBody()}</div><button class="button secondary" data-action="okr-refresh">Refresh now</button></section>${navigation(
+  return `<section class="page progress-page"><header><span class="section-label">PROGRESS REPORT</span><h1>What First Things is doing</h1><p class="body-copy">Live numbers from everyone using the app. They move as people check off their first things.</p></header><div id="okr-report">${((lastOkrCards = okrParts().cards), okrBody())}</div><button class="button secondary" data-action="okr-refresh">Refresh now</button></section>${navigation(
     "progress"
   )}`;
 }
@@ -1210,7 +1323,9 @@ function locked() {
             : "You’re free to explore"
         }</b><p>That’s the idea. In a real app, you’d be back in ${
           a.name
-        }.</p></div>${btn("Back to my day", "nav", "", 'data-to="home"')}`
+        }.</p></div>${
+          st.active ? btn("End break early", "end-break", "secondary") : ""
+        }${btn("Back to my day", "nav", "", 'data-to="home"')}`
   }</div><p class="privacy-note">No real app was opened or blocked.</p></section>`;
 }
 function lockscreen() {
@@ -1256,6 +1371,8 @@ function taskEditor(id = "", kind = "task") {
     recurrence: "none",
     photo: false,
     goalId: "",
+    urgency: "normal",
+    reminder: false,
   };
   taskDraft = { id, kind };
   openModal(
@@ -1287,8 +1404,21 @@ function taskEditor(id = "", kind = "task") {
       )
       .join(
         ""
-      )}</select></label><label class="toggle-label"><span><b>Verify with a photo</b><small>Optional. Otherwise, just check it off.</small></span><input type="checkbox" name="photo" ${
+      )}</select></label><label class="field"><span>Priority</span><select name="urgency">${[
+      ["high", "High"],
+      ["normal", "Normal"],
+      ["low", "Low"],
+    ]
+      .map(
+        ([v, l]) =>
+          `<option value="${v}" ${
+            (t.urgency || "normal") === v ? "selected" : ""
+          }>${l}</option>`
+      )
+      .join("")}</select></label><label class="toggle-label"><span><b>Verify with a photo</b><small>Optional. Otherwise, just check it off.</small></span><input type="checkbox" name="photo" ${
       t.photo ? "checked" : ""
+    }></label><label class="toggle-label"><span><b>Reminder only</b><small>Won’t pause apps or count toward earning breaks.</small></span><input type="checkbox" name="reminder" ${
+      t.reminder ? "checked" : ""
     }></label><p class="small muted">This task goes on today’s list. Weekly repeats follow today’s weekday; monthly repeats follow the calendar day, or the last day in a shorter month.</p><div class="form-error" role="alert"></div><button class="button">${
       id ? "Save changes" : "Add to today"
     }</button>${
@@ -1310,7 +1440,7 @@ function goalEditor(id = "") {
     id ? "Keep your goal in view." : "What’s your bigger why?",
     `<form data-form="goal" novalidate><label class="field"><span>Your goal</span><textarea name="title" maxlength="180">${esc(
       g.title
-    )}</textarea></label><label class="field"><span>Target date</span><input type="date" name="target" value="${
+    )}</textarea></label><label class="field"><span>Target date</span><input type="date" min="${localDay()}" name="target" value="${
       g.target
     }"></label><div class="form-error" role="alert"></div><button class="button">Save goal</button>${
       id
@@ -1444,7 +1574,7 @@ function tryApps() {
           `<button class="app-choice" data-action="open-app" data-value="${
             a.name
           }"><span class="app-logo" style="background:${a.color}">${
-            a.short
+            `<img src="icons/apps/${a.name.toLowerCase()}.svg" alt="" width="28" height="28">`
           }</span><span><b>${a.name}</b><small>${
             stats(s).remaining &&
             !stats(s).active &&
@@ -1489,6 +1619,9 @@ function breakDetail() {
     }</p>${
       st.banked && st.remaining && !st.active
         ? btn("Start a 10-minute break", "start-break")
+        : st.active
+        ? btn("End break early", "end-break", "secondary") +
+          btn("Back to my day", "close-modal", "ghost")
         : btn("Back to my day", "close-modal")
     }`
   );
@@ -1707,6 +1840,8 @@ document.addEventListener("click", async (e) => {
       const t = s.tasks.find((t) => t.id === id);
       if (t.done) {
         t.done = false;
+        const owner = s.goals.find((g) => g.id === t.goalId);
+        if (owner && owner.stepsDone > 0) owner.stepsDone--;
         reconcile(s);
         render();
         toast(
@@ -1751,11 +1886,11 @@ document.addEventListener("click", async (e) => {
       signOut();
       break;
     case "instagram-setup":
-      await instagramSetup();
+      await instagramSetup(v || "Instagram");
       break;
     case "shortcut-copy":
       if (instagramConfig && ["url", "apiKey", "reminder"].includes(v)) {
-        try { await navigator.clipboard.writeText(instagramConfig[v]); toast("Copied. Paste it into Shortcuts."); }
+        try { await copyText(instagramConfig[v]); toast("Copied. Paste it into Shortcuts."); }
         catch { modal.querySelector(`[data-shortcut-value="${v}"]`)?.select(); toast("Select and copy the highlighted value."); }
       }
       break;
@@ -1846,6 +1981,36 @@ document.addEventListener("click", async (e) => {
         toast(err.message);
       }
       break;
+    case "end-break": {
+      // Explain what ending now means before doing it.
+      const p = breakEndPreview(s);
+      if (!p) { toast("There is no break running."); break; }
+      const message =
+        p.outcome === "refund"
+          ? "You’ve used less than 2 minutes, so this break goes back to your bank to use later."
+          : p.outcome === "forfeit-repeat"
+          ? "This break was already returned to your bank once, so ending it now won’t put it back."
+          : `You’ve used ${Math.floor(p.used / 60000)} of 10 minutes. Ending now won’t put the rest of this break back in your bank.`;
+      openModal(
+        "End your break early?",
+        `<p>${message}</p>${btn("End break", "confirm-end-break")}${btn("Keep my break", "close-modal", "ghost")}`
+      );
+      break;
+    }
+    case "confirm-end-break":
+      try {
+        const r = endBreak(s);
+        closeModal();
+        render();
+        toast(
+          r.outcome === "refund"
+            ? "Break ended and saved for later. Selected apps are paused again."
+            : "Break ended. Selected apps are paused again."
+        );
+      } catch (err) {
+        toast(err.message);
+      }
+      break;
     case "break-detail":
       breakDetail();
       break;
@@ -1858,7 +2023,10 @@ document.addEventListener("click", async (e) => {
       go("locked");
       break;
     case "tackle": {
-      const task = s.tasks.find((t) => !t.done);
+      // Suggest the most urgent task that counts toward unlocking apps.
+      const task = s.tasks
+        .filter((t) => !t.done && !t.reminder)
+        .sort((x, y) => urgencyRank(x) - urgencyRank(y))[0];
       go("home");
       if (task) toast("A place to start: “" + task.title + "”");
       break;
@@ -1966,22 +2134,35 @@ document.addEventListener("change", (e) => {
   }
 
 if (e.target.id === "avatar-upload") {
-  const file = e.target.files?.[0];
+  const input = e.target;
+  const file = input.files?.[0];
   if (!file) return;
-
-  const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-
-  if (!allowedTypes.includes(file.type)) {
-    alert("Please choose a JPG, PNG, or WebP image.");
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    toast("Please choose a JPG, PNG, or WebP image.");
+    input.value = "";
     return;
   }
-
-  if (file.size > 2 * 1024 * 1024) {
-    alert("Your profile picture must be under 2 MB.");
+  if (file.size > 8 * 1024 * 1024) {
+    toast("Choose a picture under 8 MB.");
+    input.value = "";
     return;
   }
-
-  console.log("Profile picture selected:", file.name);
+  resizeAvatar(file)
+    .then((dataUrl) => {
+      const previous = s.profile.avatar;
+      s.profile.avatar = dataUrl;
+      persistAccount();
+      if (storageFailed) {
+        if (previous) s.profile.avatar = previous;
+        else delete s.profile.avatar;
+        toast("Your picture couldn’t be saved. Free some device storage and try again.");
+        return;
+      }
+      render();
+      toast("Profile picture updated.");
+    })
+    .catch(() => toast("That image couldn’t be opened. Please try another."))
+    .finally(() => { input.value = ""; });
 }
 
 });
@@ -2002,6 +2183,7 @@ document.addEventListener("submit", async (e) => {
       render();
     }
   };
+  if (values.target && values.target < localDay()) { fail("Choose today or a future date."); return; }
   switch (form.dataset.form) {
     case "signup": {
       let phone;
@@ -2041,13 +2223,15 @@ document.addEventListener("submit", async (e) => {
           id: s.goals[0]?.id || uid(),
           title: values.title.trim(),
           target: values.target,
+          created: s.goals[0]?.created || localDay(now(s)),
+          stepsDone: s.goals[0]?.stepsDone || 0,
         },
       ];
       go("calendar");
       break;
     }
     case "task": {
-      const data = { ...values, photo: f.has("photo") };
+      const data = { ...values, photo: f.has("photo"), reminder: f.has("reminder") };
       if (!data.title.trim()) {
         fail("Give your task a name. A few words are enough.");
         break;
@@ -2099,6 +2283,8 @@ document.addEventListener("submit", async (e) => {
           id: uid(),
           title: values.title.trim(),
           target: values.target,
+          created: localDay(now(s)),
+          stepsDone: 0,
         });
       closeModal();
       render();
@@ -2126,7 +2312,7 @@ document.addEventListener("submit", async (e) => {
           save.textContent = "Save profile";
         }
       } else {
-        s.profile = { name, phone: activePhone };
+        s.profile = { ...s.profile, name, phone: activePhone };
         persistAccount();
         if (storageFailed) { fail("Your profile couldn’t be saved. Free some device storage and try again."); break; }
         closeModal();
@@ -2194,6 +2380,15 @@ if (s.loginVerified) {
   }
   catch { s = initial(); rememberLogin(); }
 }
+// Hidden route: the Progress report is no longer in the navigation. Adding
+// #progress to the app's address (for example .../index.html#progress) opens it
+// for demos and grading. It only opens for a signed-in, onboarded user, so the
+// welcome and setup screens can't be skipped.
+function openHiddenReport() {
+  if (location.hash !== "#progress" || !activePhone || !s.onboarded) return;
+  go("progress");
+}
+window.addEventListener("hashchange", openHiddenReport);
 setupPWA({ beforeUpdate: () => { persistAccount(); return !storageFailed; } });
 // Google sends people back with ?calendar=connected|denied|missing|error.
 const calendarResult = new URL(location.href).searchParams.get("calendar");
@@ -2220,6 +2415,7 @@ document.addEventListener("visibilitychange", recheckCalendar);
 // Back-button return from Google restores this page from cache with the busy state.
 window.addEventListener("pageshow", (e) => { if (e.persisted && calendarBusy) { calendarBusy = false; render(); } });
 render();
+openHiddenReport(); // handles a page that loads with #progress already set
 syncAccounts();
 updateTimers();
 // Optional browser-native tools share the same state and visible actions.
