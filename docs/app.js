@@ -370,7 +370,7 @@ function toast(message) {
 }
 function rememberLogin() {
   if (!saveLogin(s, loginStorage))
-    toast("Your browser couldn’t remember your login. You can still use the demo.");
+    toast("Your browser couldn’t remember your login. You can still use the app.");
 }
 function go(screen) {
   error = "";
@@ -443,8 +443,6 @@ function render() {
     goals: goals,
     progress: progressReport,
     settings: settings,
-    locked: locked,
-    lockscreen: lockscreen,
   };
   root.innerHTML = (map[s.screen] || home)();
   persistAccount();
@@ -461,7 +459,7 @@ function render() {
 // Every screen change is saved as a browser history entry, so the phone's Back
 // gesture/button returns to the previous screen instead of leaving the app.
 const ONBOARDING_SCREENS = ["welcome", "tone", "conversation", "firstGoal", "calendar", "apps", "breaks", "tutorial", "suggestions"];
-const MAIN_SCREENS = ["home", "goals", "progress", "settings", "locked", "lockscreen"];
+const MAIN_SCREENS = ["home", "goals", "progress", "settings"];
 function syncHistory() {
   if (history.state?.ft === s.screen) return; // already recorded (also true right after Back)
   // Keep the hidden Progress route in the address; every other screen uses the plain address.
@@ -491,7 +489,7 @@ function welcome() {
     s.profile.phone
   )}" placeholder="(555) 123-4567" autocomplete="tel"></label>${
     error ? `<div class="error" role="alert">${esc(error)}</div>` : ""
-  }<button class="button">Continue with phone number</button><p class="privacy-note">Use the same number to find your account.<br>Demo login: no code or text. Anyone with your number can open this demo account.</p></form><button class="button secondary install-button" data-install>Install First Things</button><p class="install-caption">Keep your day one tap away. Works offline.</p><button class="button ghost mobile-demo" data-action="demo">Demo controls</button></section>`;
+  }<button class="button">Continue with phone number</button><p class="privacy-note">Use the same number to find your account.<br>No code or text message. Anyone who knows your number can open your account, so keep private details out of it.</p></form><button class="button secondary install-button" data-install>Install First Things</button><p class="install-caption">Keep your day one tap away. Works offline.</p></section>`;
 }
 function tone() {
   return step(
@@ -882,9 +880,11 @@ function home() {
     photos = done.some((t) => t.photo) ? todaysPhotos() : {};
   return `<section class="page daily"><header class="daily-header"><div><span class="section-label">${today()}</span><h1>Your day, ${esc(
     name
-  )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${esc(
-    name[0]?.toUpperCase()
-  )}</button></header><div class="progress-card"><div><span class="overline">YOUR FIRST THINGS</span><h2>${
+  )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${
+    s.profile.avatar
+      ? `<img src="${esc(s.profile.avatar)}" alt="" class="profile-avatar">`
+      : esc(name[0]?.toUpperCase())
+  }</button></header><div class="progress-card"><div><span class="overline">YOUR FIRST THINGS</span><h2>${
     st.total
       ? st.remaining === 0
         ? "Look at you go."
@@ -1072,8 +1072,12 @@ function settings() {
   )}</button>
   <label for="avatar-upload" class="text-link profile-upload">
   <input type="file" id="avatar-upload" accept="image/png,image/jpeg,image/webp" style="display:none;">
-  <span>Change Photo</span>
-</label>
+  <span>${s.profile.avatar ? "Change photo" : "Add photo"}</span>
+</label>${
+    s.profile.avatar
+      ? `<button class="text-link profile-remove" data-action="remove-avatar">Remove</button>`
+      : ""
+  }
   </div><p class="section-label">YOUR DAILY RHYTHM</p>${[
     [
       "apps",
@@ -1123,15 +1127,11 @@ function settings() {
   </span>
   <span>›</span>
 </button>
-<p class="section-label" style="margin-top:27px">EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
+<p class="section-label" style="margin-top:27px">HOW IT WORKS</p><button class="setting-row" data-action="try-apps">${icon(
     "phone"
-  )}<span><b>Try a distracting app</b><small>See why it’s paused or unlocked</small></span><span>›</span></button><button class="setting-row" data-action="lockscreen">${icon(
-    "lock"
-  )}<span><b>Lock-screen preview</b><small>A little reminder from George</small></span><span>›</span></button><button class="setting-row" data-action="demo">${icon(
-    "spark"
-  )}<span><b>Demo controls</b><small>Explore resets and recovery states</small></span><span>›</span></button><button class="setting-row" data-action="day-rules">${icon(
+  )}<span><b>App access</b><small>What’s paused right now, and why</small></span><span>›</span></button><button class="setting-row" data-action="day-rules">${icon(
     "clock"
-  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>Photo checks use AI (Claude) and photos are never saved online. Google Calendar is optional and read-only. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
+  )}<span><b>What happens at midnight?</b><small>Daily reset, repeats and unused breaks</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Phone sign-in doesn’t use a verification code.<br>Photo checks use AI (Claude) and photos are never saved online. Google Calendar is optional and read-only. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
     "settings"
   )}`;
 }
@@ -1345,71 +1345,6 @@ function progressReport() {
     "progress"
   )}`;
 }
-function locked() {
-  const st = stats(s),
-    a = apps.find((a) => a.name === s.attemptedApp) || apps[0],
-    isBlocked = st.remaining && !st.active && s.selectedApps.includes(a.name);
-  return `<section class="page blocked-page"><button class="back" data-action="nav" data-to="home">${icon(
-    "back"
-  )} Today</button><span class="pill">SIMULATED APP EXPERIENCE</span><span class="big-app-logo" style="background:${
-    a.color
-  }">${a.short}</span><h1>${
-    isBlocked ? "First things first." : `Hello, ${a.name}.`
-  }</h1><p class="body-copy">${
-    isBlocked
-      ? `${a.name} is paused while you have ${st.remaining} unfinished task${
-          st.remaining === 1 ? "" : "s"
-        }.`
-      : `${a.name} is available ${
-          st.active
-            ? "during your break"
-            : !s.selectedApps.includes(a.name)
-            ? "because you haven’t restricted it"
-            : "because your daily list is complete or empty"
-        }.`
-  }</p>${bubble(
-    isBlocked
-      ? s.tone === "direct"
-        ? "You chose to make this time count. Pick one task and get started."
-        : s.tone === "gentle"
-        ? "Your feed will be here later. Let’s give one small thing a little care first."
-        : "A small step now, a little scroll later. You’ve got this."
-      : "Enjoy a little time for yourself. You’re in control."
-  )}<div class="bottom-actions">${
-    isBlocked
-      ? `${btn("Back to my first things", "nav", "", 'data-to="home"')}${
-          st.banked
-            ? btn("Start an earned 10-minute break", "start-break", "secondary")
-            : ""
-        }${st.remaining ? btn("Tackle my next task", "tackle", "ghost") : ""}`
-      : `<div class="sim-feed"><div></div><b>${
-          st.active
-            ? "<span data-countdown></span> remaining"
-            : "You’re free to explore"
-        }</b><p>That’s the idea. In a real app, you’d be back in ${
-          a.name
-        }.</p></div>${
-          st.active ? btn("End break early", "end-break", "secondary") : ""
-        }${btn("Back to my day", "nav", "", 'data-to="home"')}`
-  }</div><p class="privacy-note">No real app was opened or blocked.</p></section>`;
-}
-function lockscreen() {
-  const st = stats(s);
-  return `<section class="page lockscreen"><button class="back" data-action="nav" data-to="settings">${icon(
-    "back"
-  )} Back to Settings</button><span class="lock-clock">${new Date(
-    now(s)
-  ).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  })}</span><p>${today()}</p><div class="lock-widget"><div class="row">${avatar()}<b>first things.</b><span class="pill">PREVIEW</span></div><h2>${
-    st.remaining
-      ? `${st.remaining} small step${st.remaining === 1 ? "" : "s"} left.`
-      : "Your first things are done."
-  }</h2><p>${nextBreakText()}</p><button class="button" data-action="nav" data-to="home">${
-    st.remaining ? "Take my next step" : "See my day"
-  }</button></div><p class="privacy-note">A concept preview, inside this demo.<br>No access to your real lock screen.</p></section>`;
-}
 function openModal(title, body) {
   modalVersion++;
   modal.innerHTML = `<div class="modal-top"><h2>${title}</h2><button class="icon-btn" data-action="close-modal" aria-label="Close dialog">${icon(
@@ -1596,67 +1531,57 @@ function photoDialog(id) {
     }</p>`
   );
 }
-function demo() {
-  openModal(
-    "Explore the demo.",
-    `<p>Use a sample phone number to try the new-user journey. App blocking and integrations are demonstrations.</p><div class="stack">${btn(
-      "Open a ready-made day",
-      "sample-day",
-      "secondary"
-    )}${
-      s.onboarded
-        ? `${btn("Try a distracting app", "try-apps", "secondary")}${btn(
-            "Finish the active break",
-            "finish-break",
-            "secondary",
-            stats(s).active ? "" : "disabled"
-          )}${btn(
-            "Simulate next local midnight",
-            "midnight",
-            "secondary"
-          )}`
-        : ""
-    }${btn(
-      "Restart the new-user journey",
-      "reset",
-      "danger"
-    )}</div><p class="small muted">Changes to tasks and daily progress also sync to this demo phone account.</p>`
-  );
-}
 function rules() {
   openModal(
     "A new day, a fresh start.",
-    `<p>Today’s list resets at <b>midnight in your local time zone</b>.</p><ul class="rule-list"><li>Unfinished one-time tasks carry into tomorrow.</li><li>Completed one-time tasks leave the daily list.</li><li>Recurring tasks return incomplete on their scheduled day. Missed repeats don’t pile up.</li><li>Unused earned breaks expire and active breaks end at midnight.</li><li>Apps stay unlocked if the new list is empty; unfinished tasks pause your selected apps again.</li></ul><p class="small muted">These are the prototype’s assumptions for daily carryover and unused breaks. Weekly repeats use the creation weekday. Monthly repeats use the creation date, clamped to the last day of shorter months.</p>${btn(
+    `<p>Today’s list resets at <b>midnight in your local time zone</b>.</p><ul class="rule-list"><li>Unfinished one-time tasks carry into tomorrow.</li><li>Completed one-time tasks leave the daily list.</li><li>Recurring tasks return incomplete on their scheduled day. Missed repeats don’t pile up.</li><li>Unused earned breaks expire and active breaks end at midnight.</li><li>Apps stay unlocked if the new list is empty; unfinished tasks pause your selected apps again.</li></ul><p class="small muted">Weekly repeats use the creation weekday. Monthly repeats use the creation date, clamped to the last day of shorter months.</p>${btn(
       "Got it",
       "close-modal"
     )}`
   );
 }
+// App access: what is paused right now, why, and what opens it. A web app
+// can't block other apps, so this sheet only reports status and points to the
+// iPhone shortcut, which is what actually sends people back here.
 function tryApps() {
+  const st = stats(s);
+  const chosen = apps.filter((a) => s.selectedApps.includes(a.name));
+  const headline = !chosen.length
+    ? "No apps are restricted."
+    : st.active
+    ? "Open during your break."
+    : st.blocked
+    ? "Paused until your first things are done."
+    : "Open. Your list is done or empty.";
+  const why = !chosen.length
+    ? "Choose apps to pause while you have unfinished tasks."
+    : st.active
+    ? "<span data-countdown></span> left on your break."
+    : esc(nextBreakText());
   openModal(
-    "Try a little scroll.",
-    `<p class="small muted">Tap an app to see its current access. This is a simulation.</p>${apps
-      .map(
-        (a) =>
-          `<button class="app-choice" data-action="open-app" data-value="${
-            a.name
-          }"><span class="app-logo" style="background:${a.color}">${
-            `<img src="icons/apps/${a.name.toLowerCase()}.svg" alt="" width="28" height="28">`
-          }</span><span><b>${a.name}</b><small>${
-            stats(s).remaining &&
-            !stats(s).active &&
-            s.selectedApps.includes(a.name)
-              ? "Paused — first things are waiting"
-              : "Available"
-          }</small></span>${icon(
-            stats(s).remaining &&
-              !stats(s).active &&
-              s.selectedApps.includes(a.name)
-              ? "lock"
-              : "unlock"
-          )}</button>`
-      )
-      .join("")}`
+    "Your app access.",
+    `<p class="app-status-headline"><b>${headline}</b><br><span class="small muted">${why}</span></p>${
+      chosen.length
+        ? `<div class="app-status-list">${chosen
+            .map(
+              (a) =>
+                `<div class="app-choice"><span class="app-logo" style="background:${a.color}"><img src="icons/apps/${a.name.toLowerCase()}.svg" alt="" width="28" height="28"></span><span><b>${
+                  a.name
+                }</b><small>${st.blocked ? "Paused" : "Open"}</small></span></div>`
+            )
+            .join("")}</div>`
+        : ""
+    }${
+      st.blocked && st.banked
+        ? btn("Start an earned 10-minute break", "start-break", "secondary")
+        : ""
+    }${st.active ? btn("End break early", "end-break", "secondary") : ""}${
+      st.blocked ? btn("Tackle my next task", "tackle", "ghost") : ""
+    }${btn(chosen.length ? "Change which apps" : "Choose apps", "settings-page", "ghost", 'data-to="apps"')}<div class="info-note"><b>Make it work on your iPhone.</b><br>First Things can’t close other apps by itself. The App shortcuts automation checks this status whenever you open a paused app and brings you back here.</div>${btn(
+      "Set up App shortcuts",
+      "instagram-setup",
+      "secondary"
+    )}`
   );
 }
 function breakDetail() {
@@ -1948,6 +1873,7 @@ document.addEventListener("click", async (e) => {
       toast("Goal removed. Its daily tasks are still yours.");
       break;
     case "settings-page":
+      if (modal.open) closeModal();
       go(el.dataset.to);
       break;
     case "sign-out":
@@ -2084,90 +2010,31 @@ document.addEventListener("click", async (e) => {
     case "try-apps":
       tryApps();
       break;
-    case "open-app":
-      s.attemptedApp = v;
-      closeModal();
-      go("locked");
-      break;
     case "tackle": {
       // Suggest the most urgent task that counts toward unlocking apps.
       const task = s.tasks
         .filter((t) => !t.done && !t.reminder)
         .sort((x, y) => urgencyRank(x) - urgencyRank(y))[0];
+      closeModal();
       go("home");
       if (task) toast("A place to start: “" + task.title + "”");
       break;
     }
-    case "lockscreen":
-      go("lockscreen");
+    case "remove-avatar": {
+      const previous = s.profile.avatar;
+      delete s.profile.avatar;
+      persistAccount();
+      if (storageFailed) {
+        s.profile.avatar = previous;
+        toast("Your picture couldn’t be removed. Free some device storage and try again.");
+        break;
+      }
+      render();
+      toast("Profile picture removed.");
       break;
+    }
     case "day-rules":
       rules();
-      break;
-    case "demo":
-      demo();
-      break;
-    case "finish-break":
-      s.activeUntil = 0;
-      closeModal();
-      render();
-      toast(
-        stats(s).remaining
-          ? "Break finished. Your selected apps are paused again."
-          : "Your apps are fully unlocked."
-      );
-      break;
-    case "midnight": {
-      const d = new Date(now(s));
-      d.setHours(24, 0, 1, 0);
-      s.timeOffset = d.getTime() - Date.now();
-      rollover(s);
-      closeModal();
-      go("home");
-      toast(
-        "A fresh day. Unfinished one-time tasks carried over; daily breaks reset."
-      );
-      break;
-    }
-    case "sample-day": {
-      if (USE_SUPABASE) { toast("Switch off Supabase in the config to use sample data."); break; }
-      s = initial();
-      s.onboarded = true;
-      s.loginVerified = true;
-      s.screen = "home";
-      s.profile = { name: "Alex", phone: "(555) 123-4567" };
-      rememberLogin();
-      s.answers = [
-        "I’m studying and working",
-        "Friends, music, and the gym",
-        "After class. I get pulled into scrolling.",
-      ];
-      s.goals = [
-        {
-          id: uid(),
-          title: "Feel ready for my final exams",
-          target: localDay(now(s) + 30 * 86400000),
-        },
-      ];
-      suggest(s).forEach((t) => addTask(s, t));
-      s.tasks[2].photo = true;
-      closeModal();
-      render();
-      toast("Meet Alex’s sample day. Four tasks, two possible breaks.");
-      break;
-    }
-    case "reset":
-      openModal(
-        "A fresh beginning?",
-        `<p>Sign out to try another number. This account’s tasks and pending changes stay saved on this device.</p>${btn(
-          "Sign out",
-          "confirm-reset",
-          "danger"
-        )}${btn("Keep my progress", "close-modal", "ghost")}`
-      );
-      break;
-    case "confirm-reset":
-      signOut();
       break;
   }
 });
@@ -2494,7 +2361,7 @@ if (document.modelContext?.registerTool) {
     name: "read_daily_progress",
     title: "Read today’s progress",
     description:
-      "Read tasks, app access, and earned breaks in the First Things local demo.",
+      "Read tasks, app access, and earned breaks in First Things.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -2516,7 +2383,7 @@ if (document.modelContext?.registerTool) {
     name: "add_daily_task",
     title: "Add a task for today",
     description:
-      "Add an approved task to today’s local demo list. Unfinished tasks pause selected apps unless a break is active.",
+      "Add an approved task to today’s list. Unfinished tasks pause selected apps unless a break is active.",
     inputSchema: {
       type: "object",
       properties: { title: { type: "string", minLength: 1, maxLength: 180 } },
