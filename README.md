@@ -48,15 +48,17 @@ The install button displays instructions on iPhone; Safari requires you to finis
 
 ## Edit your profile
 
-1. Open **Settings** using the bottom navigation or your initial at the top of Today.
+1. Open **Settings** using the bottom navigation or your picture (or initial) at the top of Today.
 2. Tap **Edit** next to your name and number.
 3. Change your name, phone number, or both, then tap **Save profile**.
+
+**Profile picture:** tap **Add photo** (or **Change photo**) next to your name and pick a picture. It is cropped to a square, shrunk to 256 px, saved with your account, and shown in Settings and at the top of Today. **Remove** goes back to your initial.
 
 Name changes save on this device immediately and can sync later if you are offline. A phone-number change requires internet so the app can sync pending tasks, check that the new number is unused, and move the account together with its goals, tasks, preferences, and progress.
 
 After changing numbers, use the **new number** to sign in on every device. An account already using that number will not be overwritten or merged. The old number stops being a sign-in for this account (you can move back to a number previously held by the same account); devices still signed in with it are asked to sign out, and cannot recreate the old cloud account. Unsynced edits from another device remain in that device’s old local account, so sync your other devices before changing numbers.
 
-If the connection drops during a number change, the app keeps a recovery record and retries while open after reconnecting. Wait for confirmation before switching numbers again. No verification code is sent; these remain demo accounts.
+If the connection drops during a number change, the app keeps a recovery record and retries while open after reconnecting. Wait for confirmation before switching numbers again. No verification code is sent, so anyone who knows a number can open that account.
 
 ## Instagram reminder with Apple Shortcuts (iPhone)
 
@@ -163,7 +165,7 @@ Because an account's saved state only holds the current day, `supabase/okr-repor
 
 **Optional integrations:** an Apple Shortcuts Instagram reminder uses real synced task/break status, after manual setup on each iPhone. Google Calendar connects for real with read-only access, and photo checks use Claude Haiku 5.5 (see below).
 
-**Simulated:** the in-app blocking preview and lock-screen notifications. A PWA cannot enforce a native iPhone app lock.
+**Not possible in a web app:** blocking other apps. **Settings → App access** (or the apps card on Today) shows what is paused and why, and the Apple Shortcuts automation is what actually sends you back from a paused app.
 
 ## Development
 

@@ -1,5 +1,5 @@
 // Bump on every release that changes a shell asset. One version = one full shell.
-const CACHE = 'first-things-shell-v20';
+const CACHE = 'first-things-shell-v22';
 const ASSETS = [
   './', './index.html', './styles.css', './notebook.css', './app.js', './model.js', './session.js',
   './shortcut.js', './calendar.js', './photo.js', './offline.js', './cloud.js', './supabase-config.js', './pwa.js', './reminders.js',
