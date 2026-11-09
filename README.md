@@ -133,9 +133,9 @@ Because an account's saved state only holds the current day, `supabase/okr-repor
 
 **Real:** Home Screen installation, phone-number account lookup, persistent goals/tasks, offline editing, reconnect sync, live OKR Key Results, and responsive mobile layout.
 
-**Optional integrations:** an Apple Shortcuts Instagram reminder uses real synced task/break status, after manual setup on each iPhone. Google Calendar connects for real with read-only access (see below).
+**Optional integrations:** an Apple Shortcuts Instagram reminder uses real synced task/break status, after manual setup on each iPhone. Google Calendar connects for real with read-only access, and photo checks use Claude Haiku 5.5 (see below).
 
-**Simulated:** the in-app blocking preview, photo verification, and lock-screen notifications. A PWA cannot enforce a native iPhone app lock.
+**Simulated:** the in-app blocking preview and lock-screen notifications. A PWA cannot enforce a native iPhone app lock.
 
 ## Development
 
@@ -211,13 +211,36 @@ npx supabase@latest functions deploy google-calendar --no-verify-jwt
 
 **Known limits.** On an installed iPhone app, Google may return to Safari instead of the Home Screen app. Safari then says to switch back, and the app picks up the connection when it is reopened. Anyone with a phone number can still press Disconnect for that account. Sending tasks to Google Calendar needs a write scope, so connected users will approve again when that feature arrives.
 
+## Photo verification
+
+A task with **Verify with a photo** turned on opens the camera when it is checked off. The photo is shrunk on the phone (1024 px), sent once to the `verify-photo` Supabase Edge Function, and checked by **Claude Haiku 5.5** (`claude-haiku-5-5`), which answers **pass**, **unsure** or **fail** with a one-line reason. Pass and unsure complete the task. Fail asks for another photo; after three fails, George trusts your effort and completes it anyway. Photo checks stay optional per task.
+
+**Privacy.** Photos are never stored on a server. Each one goes to Anthropic once for the check. A small copy (320 px) stays in this browser until midnight and shows next to the finished task. Unchecking a task deletes its copy, and checking it again needs a new photo.
+
+**Never stuck.** If the check can't run (offline, function not deployed, missing key, daily limit reached, or an Anthropic outage), the photo counts as proof and the task completes.
+
+**Cost limits.** Phone accounts are unverified, so `supabase/photo-checks.sql` caps checks at 30 per account and 1,000 for the whole app per UTC day. Change them with the `PHOTO_CHECKS_PER_ACCOUNT` and `PHOTO_CHECKS_PER_APP` secrets. At Haiku prices a check costs roughly $0.0003.
+
+### Setup
+
+1. Create an API key at [console.anthropic.com](https://console.anthropic.com) (add billing first).
+2. Run **`supabase/photo-checks.sql`** in the SQL Editor after `pwa-demo-accounts.sql`.
+3. From the repository root (`APP_ORIGINS` is already set for Google Calendar):
+
+```sh
+npx supabase@latest secrets set ANTHROPIC_API_KEY=sk-ant-...
+npx supabase@latest functions deploy verify-photo --no-verify-jwt
+```
+
+Never put the key in `docs/` or commit it; it lives only in Supabase secrets.
+
 ## Publish
 
 GitHub repository **Settings → Pages → Deploy from a branch → main → /docs**. HTTPS is required. This repository is configured to publish that folder automatically when `main` changes. Relative manifest URLs and the service-worker scope support the `/first-things-PWA/` subpath.
 
 ## Verification
 
-`npm test` covers task behavior, legacy session/sync behavior, phone normalization, durable offline edits, reconnect, account isolation, two-device merge/deletion conflicts, concurrent saves, storage failure, service-worker caching at a repository subpath, profile edits, number collisions, recovery after a phone-change response is lost, and the Google Calendar sign-in, device-key, revocation and free-time logic against a mocked Google.
+`npm test` covers task behavior, legacy session/sync behavior, phone normalization, durable offline edits, reconnect, account isolation, two-device merge/deletion conflicts, concurrent saves, storage failure, service-worker caching at a repository subpath, profile edits, number collisions, recovery after a phone-change response is lost, the Google Calendar sign-in, device-key, revocation and free-time logic against a mocked Google, and photo verification (input checks, daily limits, fallbacks, the Claude request shape, and today's kept photos) against a mocked Claude.
 
 For a device smoke test:
 

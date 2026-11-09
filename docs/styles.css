@@ -58,3 +58,4 @@ html,body,button,a,input,select,textarea,label,summary{touch-action:manipulation
 .database-status.floating.faded{opacity:0}
 @media(max-width:650px),(display-mode:standalone){.database-status.floating{top:calc(env(safe-area-inset-top) + 3px)}}
 @media(prefers-reduced-motion:reduce){.database-status.floating{transition:none}}
+.photo-thumb{width:40px;height:40px;border-radius:8px;object-fit:cover;flex:none}

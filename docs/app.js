@@ -24,6 +24,7 @@ import { createCloud } from "./cloud.js";
 import { normalizePhone, accountSnapshot, applySnapshot, createAccountStore } from "./offline.js";
 import { shortcutConfig, checkInstagram } from "./shortcut.js";
 import { setupPWA } from "./pwa.js";
+import { preparePhoto, createPhotoChecker, dayPhotos, keepPhoto, forgetPhoto } from "./photo.js";
 import { createCalendar, deviceKey, forgetDeviceKey, moveDeviceKey, freeTime, eventTime, CALENDAR_RESULTS } from "./calendar.js";
 const root = document.querySelector("#app"),
   modal = document.querySelector("#modal");
@@ -37,6 +38,7 @@ let error = "",
   photoTask = "",
   photoError = "",
   photoBusy = false,
+  photoPreparing = false,
   toastTimer,
   returnTo = "home",
   taskDraft = null,
@@ -49,6 +51,8 @@ const emptyCalendar = () => ({ phase: "idle", email: "", events: [], notice: "",
 let cal = emptyCalendar();
 let hadCalendarKey = false;
 const calendarApi = USE_SUPABASE ? createCalendar() : null;
+const checkPhoto = USE_SUPABASE ? createPhotoChecker() : null;
+const todaysPhotos = () => (activePhone ? dayPhotos(loginStorage, activePhone, localDay(now(s))) : {});
 let lastSnapshot = null;
 let syncTimer;
 let legacyPhone = null;
@@ -873,7 +877,8 @@ function home() {
   const name = s.profile.name || "friend";
   const done = s.tasks.filter((t) => t.done),
     todo = s.tasks.filter((t) => !t.done).sort((x, y) => urgencyRank(x) - urgencyRank(y)),
-    reminderNote = st.reminders ? ` · ${st.reminders} reminder${st.reminders === 1 ? "" : "s"}` : "";
+    reminderNote = st.reminders ? ` · ${st.reminders} reminder${st.reminders === 1 ? "" : "s"}` : "",
+    photos = done.some((t) => t.photo) ? todaysPhotos() : {};
   return `<section class="page daily"><header class="daily-header"><div><span class="section-label">${today()}</span><h1>Your day, ${esc(
     name
   )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${esc(
@@ -942,12 +947,12 @@ function home() {
           "secondary"
         )}</div>`
       : todo.length
-      ? todo.map(taskRow).join("")
+      ? todo.map((t) => taskRow(t)).join("")
       : `<div class="completed-banner"><span>✦</span><h3>First things, done.</h3><p>You made time for what matters.<br>Your apps are fully unlocked.</p><button class="text-link" data-action="celebrate">Enjoy this little moment</button></div>`
   }${
     done.length
       ? `<div class="done-label">COMPLETED · ${done.length}</div>${done
-          .map(taskRow)
+          .map((t) => taskRow(t, photos))
           .join("")}`
       : ""
   }<button class="add-task" data-action="new-task">${icon(
@@ -960,8 +965,9 @@ function home() {
     "home"
   )}`;
 }
-function taskRow(t) {
+function taskRow(t, photos = {}) {
   const goal = s.goals.find((g) => g.id === t.goalId);
+  const kept = t.done && t.photo ? photos[t.id] : "";
   return `<div class="task-card ${
     t.done ? "completed" : ""
   } ${t.urgency === "high" ? "urgency-high" : ""}"><button class="task-check" data-action="toggle-task" data-id="${
@@ -987,6 +993,8 @@ function taskRow(t) {
   }</small></button>${
     t.photo && !t.done
       ? `<span class="photo-indicator">${icon("camera")}</span>`
+      : kept && /^data:image\/jpeg;base64,/.test(kept)
+      ? `<img class="photo-thumb" src="${kept}" alt="Your photo for ${esc(t.title)}">`
       : ""
   }<button class="task-menu" data-action="edit-task" data-id="${
     t.id
@@ -1121,7 +1129,7 @@ function settings() {
     "spark"
   )}<span><b>Demo controls</b><small>Explore resets and recovery states</small></span><span>›</span></button><button class="setting-row" data-action="day-rules">${icon(
     "clock"
-  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>AI and photos are simulated. Google Calendar is optional and read-only. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
+  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>Photo checks use AI (Claude) and photos are never saved online. Google Calendar is optional and read-only. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
     "settings"
   )}`;
 }
@@ -1449,7 +1457,7 @@ function goalEditor(id = "") {
     }</form>`
   );
 }
-function completion(t, earned = [], support = false) {
+function completion(t, earned = [], support = false, note = "") {
   render();
   const prefix =
     s.tone === "gentle"
@@ -1458,7 +1466,7 @@ function completion(t, earned = [], support = false) {
       ? "Done. Nice follow-through."
       : "A little win looks good on you!";
   toast(
-    `${prefix} “${t.title}” is complete.${
+    `${note || prefix} “${t.title}” is complete.${
       earned.length ? " You earned a 10-minute break!" : ""
     }`
   );
@@ -1505,27 +1513,29 @@ function photoDialog(id) {
     "Show your little win.",
     `<p class="small muted">${esc(t.title)}</p><div class="photo-preview">${
       photo
-        ? `<img src="${photo}" alt="Photo selected for review">`
-        : `${icon("camera")}<span>Add a photo to review first</span>`
+        ? `<img src="${photo.preview}" alt="Your photo for this task">`
+        : photoPreparing
+        ? `${icon("camera")}<span>Getting your photo ready…</span>`
+        : `${icon("camera")}<span>Take a photo that shows this task done</span>`
     }</div>${
       photoError
         ? `<div class="error" role="alert">${esc(photoError)}</div>`
         : ""
-    }<div class="row">${btn(
-      photo ? "Replace sample" : "Take demo photo",
-      "sample-photo",
-      "secondary"
-    )}<label class="button secondary upload-label">Upload photo<input type="file" accept="image/*" id="photo-upload"></label></div><p class="small muted">Photos stay in this browser. The demo camera uses George as a sample image; all checks are simulated.</p><label class="field"><span>Demo verification result</span><select id="photo-result"><option value="pass">Photo accepted</option><option value="fail">Photo needs another try</option><option value="upload-fail">Upload fails (doesn’t count)</option></select></label>${btn(
+    }<div class="row"><label class="button secondary upload-label">${
+      photo ? "Retake photo" : "Take photo"
+    }<input type="file" accept="image/*" capture="environment" id="photo-upload" ${
+      photoBusy || photoPreparing ? "disabled" : ""
+    }></label></div>${btn(
       photoBusy ? "Checking your photo…" : "Submit photo",
       "submit-photo",
       "",
-      photoBusy ? "disabled" : ""
+      photoBusy || photoPreparing || !photo ? "disabled" : ""
     )}<p class="privacy-note">${
       t.failures
         ? `${t.failures} unsuccessful check${
             t.failures === 1 ? "" : "s"
           } so far. After three, George trusts your effort.`
-        : "You can review or replace your photo before submitting."
+        : "AI checks your photo once. It isn’t saved online; a small copy stays on this phone until midnight."
     }</p>`
   );
 }
@@ -1840,6 +1850,7 @@ document.addEventListener("click", async (e) => {
       const t = s.tasks.find((t) => t.id === id);
       if (t.done) {
         t.done = false;
+        if (activePhone) forgetPhoto(loginStorage, activePhone, localDay(now(s)), t.id);
         const owner = s.goals.find((g) => g.id === t.goalId);
         if (owner && owner.stepsDone > 0) owner.stepsDone--;
         reconcile(s);
@@ -1916,57 +1927,47 @@ document.addEventListener("click", async (e) => {
         )}" autocomplete="tel" required></label><div class="form-error" role="alert"></div><button class="button" type="submit">Save profile</button><p class="small muted">Changing your number moves this account and its tasks to the new number. You’ll use it next time you sign in. A number change needs internet; name changes also work offline.</p></form>`
       );
       break;
-    case "sample-photo": {
-      photo = new URL("george.png", location.href).href;
-      photoError = "";
-      photoDialog(photoTask);
-      break;
-    }
     case "submit-photo": {
-      if (!photo) {
-        photoError =
-          "Add or take a demo photo first. No attempt has been counted.";
-        photoDialog(photoTask);
-        break;
-      }
-      const result = document.querySelector("#photo-result").value;
-      if (result === "upload-fail") {
-        photoError =
-          "That photo couldn’t upload. Try again or replace it. This doesn’t count as a failed check.";
-        photoDialog(photoTask);
-        break;
-      }
+      if (!photo || photoBusy) break;
       const taskId = photoTask,
-        originVersion = modalVersion,
+        taken = photo,
+        phone = activePhone,
         originDay = s.day,
         originState = s;
+      const t = s.tasks.find((t) => t.id === taskId);
+      if (!t) break;
       photoBusy = true;
-      el.disabled = true;
-      el.textContent = "Checking your photo…";
-      setTimeout(() => {
-        photoBusy = false;
-        if (
-          originVersion !== modalVersion ||
-          originDay !== localDay(now(s)) ||
-          originState !== s
-        )
-          return;
-        const t = s.tasks.find((t) => t.id === taskId);
-        if (!t) return;
-        const before = stats(s).banked;
-        const outcome = photoAttempt(s, taskId, result === "pass" ? 0.92 : 0.5);
-        if (outcome === "retry") {
-          photoError = `I couldn’t quite see the completed task. Try another angle or a clearer photo. ${t.failures} of 3 checks tried.`;
-          if (modal.open) photoDialog(taskId);
-        } else {
-          closeModal();
-          completion(
-            t,
-            stats(s).banked > before ? [1] : [],
-            outcome === "supported"
-          );
-        }
-      }, 900);
+      photoError = "";
+      photoDialog(taskId);
+      const originVersion = modalVersion;
+      let result;
+      try {
+        result = checkPhoto && phone
+          ? await checkPhoto(phone, t.title, taken)
+          : { fallback: true, message: "Photo checking needs the cloud setup, so your photo counts as proof." };
+      } catch (problem) {
+        result = { error: problem.message };
+      }
+      photoBusy = false;
+      // Stop if the dialog was closed, the day rolled over or the account changed.
+      if (originVersion !== modalVersion || originDay !== localDay(now(s)) || originState !== s || phone !== activePhone) break;
+      if (result.error) {
+        photoError = result.error;
+        photoDialog(taskId);
+        break;
+      }
+      const before = stats(s).banked;
+      const outcome = result.fallback ? photoAttempt(s, taskId, 1) : photoAttempt(s, taskId, result.verdict === "fail" ? 0 : 1);
+      if (outcome === "retry") {
+        photo = null;
+        photoError = `${result.reason || "I couldn’t quite see the finished task."} ${t.failures} of 3 checks tried.`;
+        photoDialog(taskId);
+        break;
+      }
+      if (phone) keepPhoto(loginStorage, phone, localDay(now(s)), taskId, taken.keep);
+      photo = null;
+      closeModal();
+      completion(t, stats(s).banked > before ? [1] : [], outcome === "supported", result.fallback ? result.message : result.reason);
       break;
     }
     case "start-break":
@@ -2113,24 +2114,19 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "photo-upload") {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) {
-      photoError =
-        "Choose an image under 8 MB. This doesn’t count as a failed check.";
-      photoDialog(photoTask);
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      photo = reader.result;
-      photoError = "";
-      photoDialog(photoTask);
-    };
-    reader.onerror = () => {
-      photoError =
-        "That image couldn’t be opened. Please try another. No attempt was counted.";
-      photoDialog(photoTask);
-    };
-    reader.readAsDataURL(file);
+    const taskId = photoTask;
+    photo = null;
+    photoError = "";
+    photoPreparing = true;
+    photoDialog(taskId);
+    const originVersion = modalVersion;
+    preparePhoto(file).then(
+      (ready) => { photo = ready; },
+      (problem) => { photoError = problem.message; }
+    ).finally(() => {
+      photoPreparing = false;
+      if (originVersion === modalVersion && photoTask === taskId) photoDialog(taskId);
+    });
   }
 
 if (e.target.id === "avatar-upload") {
