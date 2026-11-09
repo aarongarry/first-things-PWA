@@ -1,6 +1,6 @@
 import { USE_SUPABASE, getSupabaseClient } from './supabase-config.js';
 
-// Only database-backed fields enter this payload. Photos and chat are excluded.
+// Only database-backed fields enter this payload. Photos are excluded.
 export function databaseSnapshot(s) {
   return JSON.stringify({
     profile: s.profile,

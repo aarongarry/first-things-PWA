@@ -25,6 +25,8 @@ import { normalizePhone, accountSnapshot, applySnapshot, createAccountStore } fr
 import { shortcutConfig, checkInstagram } from "./shortcut.js";
 import { reminderSupport, reminderPrefs, enableReminders, disableReminders, formatTime } from "./reminders.js";
 import { setupPWA } from "./pwa.js";
+import { preparePhoto, createPhotoChecker, dayPhotos, keepPhoto, forgetPhoto } from "./photo.js";
+import { createCalendar, deviceKey, forgetDeviceKey, moveDeviceKey, freeTime, eventTime, CALENDAR_RESULTS } from "./calendar.js";
 const root = document.querySelector("#app"),
   modal = document.querySelector("#modal");
 // Login and account data are stored separately, so signing out keeps queued edits.
@@ -37,18 +39,21 @@ let error = "",
   photoTask = "",
   photoError = "",
   photoBusy = false,
-  chatBusy = false,
-  chatError = false,
-  chatDraft = "",
-  pendingMessage = "",
+  photoPreparing = false,
   toastTimer,
   returnTo = "home",
   taskDraft = null,
   goalDraft = null,
-  calendarError = false,
   calendarBusy = false,
   modalVersion = 0;
 let activePhone = null;
+// Today's Google Calendar, fetched for this device only. Never synced or saved.
+const emptyCalendar = () => ({ phase: "idle", email: "", events: [], notice: "", phone: "", day: "", loadedAt: 0, loading: false });
+let cal = emptyCalendar();
+let hadCalendarKey = false;
+const calendarApi = USE_SUPABASE ? createCalendar() : null;
+const checkPhoto = USE_SUPABASE ? createPhotoChecker() : null;
+const todaysPhotos = () => (activePhone ? dayPhotos(loginStorage, activePhone, localDay(now(s))) : {});
 let lastSnapshot = null;
 let syncTimer;
 let legacyPhone = null;
@@ -115,6 +120,8 @@ const accounts = createAccountStore({
   },
   renamed(oldPhone, newPhone, snapshot) {
     if (activePhone !== oldPhone) return;
+    moveDeviceKey(loginStorage, oldPhone, newPhone);
+    cal.phone = newPhone;
     activePhone = newPhone;
     applySnapshot(s, snapshot);
     lastSnapshot = accountSnapshot(s);
@@ -206,6 +213,7 @@ async function importLegacyAccount() {
 function activateAccount(phone, name = "") {
   if (accounts.read(phone)?.retired) throw Error("This account changed phone numbers. Sign in with the new number.");
   activePhone = phone;
+  cal = emptyCalendar();
   const seed = initial();
   seed.profile = { phone, name: name || "Friend" };
   seed.loginVerified = true;
@@ -223,6 +231,7 @@ function signOut() {
   root.inert = false;
   activePhone = null;
   lastSnapshot = null;
+  cal = emptyCalendar();
   s = initial();
   rememberLogin();
   closeModal();
@@ -404,7 +413,6 @@ function navigation(active) {
   return `<nav class="nav" aria-label="Main navigation">${[
     ["home", "Today", "home"],
     ["goals", "Goals", "goal"],
-    ["chat", "George", "chat"],
     ["settings", "Settings", "settings"],
   ]
     .map(
@@ -434,14 +442,14 @@ function render() {
     home: home,
     goals: goals,
     progress: progressReport,
-    chat: chat,
     settings: settings,
     locked: locked,
     lockscreen: lockscreen,
   };
   root.innerHTML = (map[s.screen] || home)();
   persistAccount();
-  if (s.screen === "chat" || s.screen === "conversation")
+  if (["calendar", "home", "settings"].includes(s.screen)) maybeLoadCalendar();
+  if (s.screen === "conversation")
     root.scrollTop = root.scrollHeight;
   document.querySelector("#phone-time").textContent = new Date(
     now(s)
@@ -453,7 +461,7 @@ function render() {
 // Every screen change is saved as a browser history entry, so the phone's Back
 // gesture/button returns to the previous screen instead of leaving the app.
 const ONBOARDING_SCREENS = ["welcome", "tone", "conversation", "firstGoal", "calendar", "apps", "breaks", "tutorial", "suggestions"];
-const MAIN_SCREENS = ["home", "goals", "progress", "chat", "settings", "locked", "lockscreen"];
+const MAIN_SCREENS = ["home", "goals", "progress", "settings", "locked", "lockscreen"];
 function syncHistory() {
   if (history.state?.ft === s.screen) return; // already recorded (also true right after Back)
   // Keep the hidden Progress route in the address; every other screen uses the plain address.
@@ -600,43 +608,119 @@ function firstGoal() {
     }<button class="button">Save my first goal</button></form>`
   );
 }
+const clock = (ms) => new Date(ms).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+const duration = (ms) => {
+  const m = Math.round(ms / 60000);
+  return m >= 60 ? `${Math.floor(m / 60)} hr${m % 60 ? ` ${m % 60} min` : ""}` : `${m} min`;
+};
+function calendarKey(create = false) {
+  return activePhone ? deviceKey(loginStorage, activePhone, create) : null;
+}
+// Fetch today's events when a calendar screen opens. Cached for five minutes.
+function maybeLoadCalendar(force = false) {
+  if (!calendarApi || !activePhone || cal.loading || !calendarKey()) return;
+  const fresh = cal.phone === activePhone && cal.day === localDay() &&
+    Date.now() - cal.loadedAt < (cal.phase === "ready" ? 300000 : 60000);
+  if (force || !fresh) void loadCalendar();
+}
+async function loadCalendar() {
+  const phone = activePhone, key = calendarKey();
+  Object.assign(cal, { loading: true, phone, day: localDay(), loadedAt: Date.now() });
+  try {
+    const result = await calendarApi.today(phone, key);
+    if (phone !== activePhone) return;
+    if (result.connected) {
+      Object.assign(cal, { phase: "ready", email: result.email, events: result.events });
+      s.googleCalendar = true;
+    } else {
+      Object.assign(cal, { phase: "idle", email: "", events: [] });
+      // This device's key no longer opens a connection, so stop asking with it.
+      forgetDeviceKey(loginStorage, phone);
+      if (result.revoked) cal.notice = "Google Calendar access ended, so George can’t see your schedule. Connect again any time.";
+      // "elsewhere": another device still holds the connection for this account.
+      if (!result.elsewhere) s.googleCalendar = false;
+    }
+  } catch (err) {
+    if (phone !== activePhone) return;
+    if (cal.phase !== "ready") Object.assign(cal, { phase: "error", message: err.message });
+  } finally {
+    if (phone === activePhone) {
+      cal.loading = false;
+      if (["calendar", "home", "settings"].includes(s.screen) && !modal.open &&
+          !document.activeElement?.matches("input, textarea, select")) render();
+    }
+  }
+}
+function calendarSchedule() {
+  const events = cal.events.length
+    ? cal.events.map((e) => {
+        const start = eventTime(e.start), end = eventTime(e.end);
+        return `<div class="calendar-event"><b>${e.allDay ? "All day" : clock(start)}</b><span>${esc(e.title)}<small>${
+          e.allDay ? "All-day event" : duration(end - start)
+        }${e.free ? " · shows as free" : ""}</small></span></div>`;
+      }).join("")
+    : '<p class="small muted">Nothing on your calendar today.</p>';
+  // Free time from now (or 8 AM) until 10 PM, in gaps of 15 minutes or more.
+  const d = new Date();
+  const from = Math.max(Math.ceil(Date.now() / 300000) * 300000,
+    new Date(d.getFullYear(), d.getMonth(), d.getDate(), 8).getTime());
+  const to = new Date(d.getFullYear(), d.getMonth(), d.getDate(), 22).getTime();
+  const gaps = from < to ? freeTime(cal.events, from, to) : [];
+  const free = gaps.length
+    ? gaps.map((g) => `<div class="calendar-event"><b>${clock(g.start)}</b><span>Free until ${clock(g.end)}<small>${duration(g.end - g.start)}</small></span></div>`).join("")
+    : '<p class="small muted">No free time left before 10 PM.</p>';
+  return `<div class="card"><p class="section-label">TODAY</p>${events}</div><div class="card"><p class="section-label">FREE TIME LEFT TODAY</p>${free}</div>`;
+}
+// Today screen: the next event, or the free time before it.
+function calendarLine() {
+  const now = Date.now();
+  const next = cal.events.find((e) => !e.allDay && !e.free && eventTime(e.end) > now);
+  if (!next) return "Nothing else on your calendar today";
+  if (eventTime(next.start) <= now) return `Now: ${esc(next.title)} · until ${clock(eventTime(next.end))}`;
+  return `Next up: ${esc(next.title)} · ${clock(eventTime(next.start))}`;
+}
 function calendar() {
+  const key = calendarKey();
+  const ready = cal.phase === "ready";
+  const checking = !ready && !!key && (cal.loading || !cal.loadedAt);
+  const loadError = !ready && !!key && !checking && cal.phase === "error";
+  // Only an account already confirmed connected gets the "couldn't load" screen.
+  // Otherwise (e.g. a key left by an attempt that never finished) offer Connect.
+  const failed = loadError && s.googleCalendar;
+  const elsewhere = !ready && !key && s.googleCalendar;
+  const skip = btn(s.onboarded ? "Done" : "Skip for now", "calendar-next", "ghost");
+  const disconnect = s.onboarded
+    ? btn(calendarBusy ? "Disconnecting…" : "Disconnect calendar", "calendar-disconnect", "ghost", calendarBusy ? "disabled" : "")
+    : "";
+  let body, footer;
+  if (ready) {
+    body = `<div class="success-note">✓ Connected as <b>${esc(cal.email)}</b></div>${calendarSchedule()}`;
+    footer = `${btn("Continue", "calendar-next")}${disconnect}`;
+  } else if (checking) {
+    body = '<div class="card"><p class="small muted" style="margin:0">Checking today’s calendar…</p></div>';
+    footer = skip;
+  } else if (failed) {
+    body = `<div class="error" role="alert">Couldn’t load today’s schedule. ${esc(cal.message)}</div>`;
+    footer = `${btn("Try again", "calendar-refresh")}${disconnect}${skip}`;
+  } else {
+    body = elsewhere
+      ? '<div class="info-note">Google Calendar is connected on another device. Connect on this device too to see today’s schedule here.</div>'
+      : '<div class="card row"><span class="google-g">G</span><div><b>Google Calendar</b><p class="small muted" style="margin:4px 0">Sign in with Google to see today’s events and free time here. First Things can read your events but never changes them.</p></div></div>';
+    footer = `${btn(
+      calendarBusy ? "Opening Google…" : elsewhere ? "Connect on this device" : "Connect Google Calendar",
+      "calendar-connect", "", calendarBusy ? "disabled" : ""
+    )}${elsewhere ? disconnect : ""}${skip}`;
+  }
   return step(
     "A little context<br>for your day.",
     "Connecting a calendar helps George see where a small task might fit. It’s completely optional.",
     4,
-    `<div class="calendar-illustration">${icon(
-      "calendar"
-    )}<span>Make space,<br>not more pressure.</span></div>${
-      s.calendar
-        ? `<div class="success-note">✓ Google Calendar connected in this demo</div><div class="card"><p class="section-label">SAMPLE SCHEDULE</p><div class="calendar-event"><b>10:00</b><span>Psychology lecture<small>60 minutes</small></span></div><div class="calendar-event"><b>13:30</b><span>Library study group<small>45 minutes</small></span></div><div class="calendar-event"><b>16:00</b><span>Room for a small win<small>20 minutes free</small></span></div></div>`
-        : `<div class="card row"><span class="google-g">G</span><div><b>Google Calendar</b><p class="small muted" style="margin:4px 0">A simulated connection.<br>No sign-in or real calendar access.</p></div></div>`
-    }${
-      calendarError
-        ? '<div class="error" role="alert">The calendar couldn’t connect. Your setup is saved. Try again, or continue without it.</div>'
+    `<div class="calendar-illustration">${icon("calendar")}<span>Make space,<br>not more pressure.</span></div>${body}${
+      cal.notice || (loadError && !failed)
+        ? `<div class="error" role="alert">${esc(cal.notice || cal.message)}</div>`
         : ""
     }`,
-    s.calendar
-      ? `${btn("Continue", "calendar-next")}${
-          s.onboarded
-            ? btn("Disconnect calendar", "calendar-disconnect", "ghost")
-            : ""
-        }`
-      : `${btn(
-          calendarBusy ? "Connecting…" : "Connect Google Calendar",
-          "calendar-connect",
-          "",
-          calendarBusy ? "disabled" : ""
-        )}${btn(
-          s.onboarded ? "Done" : "Skip for now",
-          "calendar-next",
-          "ghost"
-        )}${btn(
-          "Demo: simulate connection failure",
-          "calendar-fail",
-          "ghost",
-          calendarBusy ? "disabled" : ""
-        )}`
+    footer
   );
 }
 function appSelection() {
@@ -794,7 +878,8 @@ function home() {
   const name = s.profile.name || "friend";
   const done = s.tasks.filter((t) => t.done),
     todo = s.tasks.filter((t) => !t.done).sort((x, y) => urgencyRank(x) - urgencyRank(y)),
-    reminderNote = st.reminders ? ` · ${st.reminders} reminder${st.reminders === 1 ? "" : "s"}` : "";
+    reminderNote = st.reminders ? ` · ${st.reminders} reminder${st.reminders === 1 ? "" : "s"}` : "",
+    photos = done.some((t) => t.photo) ? todaysPhotos() : {};
   return `<section class="page daily"><header class="daily-header"><div><span class="section-label">${today()}</span><h1>Your day, ${esc(
     name
   )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${esc(
@@ -863,30 +948,27 @@ function home() {
           "secondary"
         )}</div>`
       : todo.length
-      ? todo.map(taskRow).join("")
+      ? todo.map((t) => taskRow(t)).join("")
       : `<div class="completed-banner"><span>✦</span><h3>First things, done.</h3><p>You made time for what matters.<br>Your apps are fully unlocked.</p><button class="text-link" data-action="celebrate">Enjoy this little moment</button></div>`
   }${
     done.length
       ? `<div class="done-label">COMPLETED · ${done.length}</div>${done
-          .map(taskRow)
+          .map((t) => taskRow(t, photos))
           .join("")}`
       : ""
   }<button class="add-task" data-action="new-task">${icon(
     "plus"
-  )} Add a little first thing</button><button class="george-home" data-action="nav" data-to="chat">${avatar()}<span><b>Big task on your mind?</b><small>Let’s find a small place to start.</small></span>${icon(
-    "chat"
-  )}</button>${
-    s.calendar
-      ? '<div class="calendar-mini">' +
-        icon("calendar") +
-        ' Next up: library study group · 1:30 PM <span class="pill">DEMO</span></div>'
+  )} Add a little first thing</button>${
+    s.googleCalendar && cal.phase === "ready"
+      ? '<div class="calendar-mini">' + icon("calendar") + " " + calendarLine() + "</div>"
       : ""
   }<p class="day-note">A new day starts at midnight. <button data-action="day-rules">How it works</button></p></section>${navigation(
     "home"
   )}`;
 }
-function taskRow(t) {
+function taskRow(t, photos = {}) {
   const goal = s.goals.find((g) => g.id === t.goalId);
+  const kept = t.done && t.photo ? photos[t.id] : "";
   return `<div class="task-card ${
     t.done ? "completed" : ""
   } ${t.urgency === "high" ? "urgency-high" : ""}"><button class="task-check" data-action="toggle-task" data-id="${
@@ -912,6 +994,8 @@ function taskRow(t) {
   }</small></button>${
     t.photo && !t.done
       ? `<span class="photo-indicator">${icon("camera")}</span>`
+      : kept && /^data:image\/jpeg;base64,/.test(kept)
+      ? `<img class="photo-thumb" src="${kept}" alt="Your photo for ${esc(t.title)}">`
       : ""
   }<button class="task-menu" data-action="edit-task" data-id="${
     t.id
@@ -956,9 +1040,7 @@ function goals() {
               "edit"
             )}</button></div><h2>${esc(
               g.title
-            )}</h2>${goalMeta(g, associated)}<button class="button secondary" data-action="goal-steps" data-id="${
-              g.id
-            }">${icon("spark")} Ask George for next steps</button>${
+            )}</h2>${goalMeta(g, associated)}${
               associated.length
                 ? `<details><summary>See today’s steps</summary>${associated
                     .map(
@@ -976,60 +1058,6 @@ function goals() {
   }<button class="add-task" data-action="new-goal">${icon(
     "plus"
   )} Add another goal</button></section>${navigation("goals")}`;
-}
-function chat() {
-  return `<section class="page chat-page"><div class="chat-header">${avatar()}<div><h1>George</h1><span>Your ${tones[
-    s.tone
-  ].label.toLowerCase()} first-things friend</span></div><span class="pill">DEMO AI</span></div><div class="chat-history">${bubble(
-    s.tone === "direct"
-      ? "Let’s choose one useful step. What needs your attention?"
-      : s.tone === "gentle"
-      ? "Hey, I’m here. We can make a big thing feel a little smaller."
-      : "Hey, " +
-        esc(s.profile.name) +
-        ". A little stuck, or just need a nudge? Let’s figure it out."
-  )}${s.messages
-    .map((m) =>
-      m.role === "user"
-        ? `<div class="user-bubble">${esc(m.text)}</div>`
-        : bubble(esc(m.text))
-    )
-    .join("")}${
-    chatBusy
-      ? bubble(
-          '<span class="typing">● ● ●</span> Thinking of a small next step…'
-        )
-      : ""
-  }${
-    chatError
-      ? `<div class="error">I couldn’t get a reply ready. Your message is safe.<button class="text-link" data-action="retry-chat">Try again</button></div>`
-      : ""
-  }${
-    s.chatSuggestions?.length
-      ? `<div class="chat-proposals"><p class="section-label">A FEW IDEAS — YOUR CHOICE</p>${s.chatSuggestions
-          .map(
-            (t) =>
-              `<div class="suggestion-card"><b>${esc(
-                t.title
-              )}</b><p class="small muted">${t.duration} min · ${esc(
-                t.why
-              )}</p><div class="row"><button class="button secondary compact" data-action="accept-chat-task" data-id="${
-                t.id
-              }">Add to today</button><button class="text-link" data-action="edit-chat-task" data-id="${
-                t.id
-              }">Adjust</button><button class="icon-btn" data-action="reject-chat-task" data-id="${
-                t.id
-              }" aria-label="Dismiss suggestion">${icon(
-                "close"
-              )}</button></div></div>`
-          )
-          .join("")}</div>`
-      : ""
-  }</div><div class="chips"><button data-action="chat-prompt" data-value="Help me break down my goal">Break down my goal</button><button data-action="chat-prompt" data-value="I’m feeling overwhelmed">I’m overwhelmed</button><button data-action="chat-prompt" data-value="Give me a little motivation">A little motivation</button></div><form class="composer" data-form="chat"><input name="message" aria-label="Message George" value="${esc(
-    chatDraft
-  )}" placeholder="What’s on your mind?" maxlength="1000"><button aria-label="Send message" ${
-    chatBusy ? "disabled" : ""
-  }>${icon("send")}</button></form></section>${navigation("chat")}`;
 }
 function settings() {
   return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>A little more you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">
@@ -1064,8 +1092,8 @@ function settings() {
       "calendar",
       "calendar",
       "Calendar connection",
-      s.calendar
-        ? "Connected · simulated Google Calendar"
+      s.googleCalendar
+        ? cal.phase === "ready" ? `Connected · ${esc(cal.email)}` : "Connected · Google Calendar"
         : "Optional · not connected",
     ],
   ]
@@ -1103,7 +1131,7 @@ function settings() {
     "spark"
   )}<span><b>Demo controls</b><small>Explore resets and recovery states</small></span><span>›</span></button><button class="setting-row" data-action="day-rules">${icon(
     "clock"
-  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>AI, calendars, and photos are simulated. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
+  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>Photo checks use AI (Claude) and photos are never saved online. Google Calendar is optional and read-only. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
     "settings"
   )}`;
 }
@@ -1401,8 +1429,6 @@ function taskEditor(id = "", kind = "task") {
   const source =
     kind === "suggestion"
       ? s.suggestions
-      : kind === "chat"
-      ? s.chatSuggestions
       : s.tasks;
   const t = source?.find((x) => x.id === id) || {
     title: "",
@@ -1459,7 +1485,7 @@ function taskEditor(id = "", kind = "task") {
     }></label><label class="toggle-label"><span><b>Reminder only</b><small>Won’t pause apps or count toward earning breaks.</small></span><input type="checkbox" name="reminder" ${
       t.reminder ? "checked" : ""
     }></label><p class="small muted">This task goes on today’s list. Weekly repeats follow today’s weekday; monthly repeats follow the calendar day, or the last day in a shorter month.</p><div class="form-error" role="alert"></div><button class="button">${
-      kind === "chat" ? "Save suggestion" : id ? "Save changes" : "Add to today"
+      id ? "Save changes" : "Add to today"
     }</button>${
       id && kind === "task"
         ? `<button class="button danger" type="button" data-action="delete-task" data-id="${id}">Delete task${
@@ -1488,7 +1514,7 @@ function goalEditor(id = "") {
     }</form>`
   );
 }
-function completion(t, earned = [], support = false) {
+function completion(t, earned = [], support = false, note = "") {
   render();
   const prefix =
     s.tone === "gentle"
@@ -1497,7 +1523,7 @@ function completion(t, earned = [], support = false) {
       ? "Done. Nice follow-through."
       : "A little win looks good on you!";
   toast(
-    `${prefix} “${t.title}” is complete.${
+    `${note || prefix} “${t.title}” is complete.${
       earned.length ? " You earned a 10-minute break!" : ""
     }`
   );
@@ -1544,27 +1570,29 @@ function photoDialog(id) {
     "Show your little win.",
     `<p class="small muted">${esc(t.title)}</p><div class="photo-preview">${
       photo
-        ? `<img src="${photo}" alt="Photo selected for review">`
-        : `${icon("camera")}<span>Add a photo to review first</span>`
+        ? `<img src="${photo.preview}" alt="Your photo for this task">`
+        : photoPreparing
+        ? `${icon("camera")}<span>Getting your photo ready…</span>`
+        : `${icon("camera")}<span>Take a photo that shows this task done</span>`
     }</div>${
       photoError
         ? `<div class="error" role="alert">${esc(photoError)}</div>`
         : ""
-    }<div class="row">${btn(
-      photo ? "Replace sample" : "Take demo photo",
-      "sample-photo",
-      "secondary"
-    )}<label class="button secondary upload-label">Upload photo<input type="file" accept="image/*" id="photo-upload"></label></div><p class="small muted">Photos stay in this browser. The demo camera uses George as a sample image; all checks are simulated.</p><label class="field"><span>Demo verification result</span><select id="photo-result"><option value="pass">Photo accepted</option><option value="fail">Photo needs another try</option><option value="upload-fail">Upload fails (doesn’t count)</option></select></label>${btn(
+    }<div class="row"><label class="button secondary upload-label">${
+      photo ? "Retake photo" : "Take photo"
+    }<input type="file" accept="image/*" capture="environment" id="photo-upload" ${
+      photoBusy || photoPreparing ? "disabled" : ""
+    }></label></div>${btn(
       photoBusy ? "Checking your photo…" : "Submit photo",
       "submit-photo",
       "",
-      photoBusy ? "disabled" : ""
+      photoBusy || photoPreparing || !photo ? "disabled" : ""
     )}<p class="privacy-note">${
       t.failures
         ? `${t.failures} unsuccessful check${
             t.failures === 1 ? "" : "s"
           } so far. After three, George trusts your effort.`
-        : "You can review or replace your photo before submitting."
+        : "AI checks your photo once. It isn’t saved online; a small copy stays on this phone until midnight."
     }</p>`
   );
 }
@@ -1586,7 +1614,7 @@ function demo() {
             "Simulate next local midnight",
             "midnight",
             "secondary"
-          )}${btn("Fail George’s next reply", "fail-next-chat", "secondary")}`
+          )}`
         : ""
     }${btn(
       "Restart the new-user journey",
@@ -1664,62 +1692,6 @@ function breakDetail() {
         : btn("Back to my day", "close-modal")
     }`
   );
-}
-function respond(text, retry = false) {
-  if (chatBusy) return;
-  chatDraft = "";
-  if (!retry) s.messages.push({ role: "user", text });
-  pendingMessage = text;
-  chatError = false;
-  chatBusy = true;
-  s.screen = "chat";
-  render();
-  setTimeout(() => {
-    chatBusy = false;
-    if (s.failNextChat) {
-      s.failNextChat = false;
-      chatError = true;
-      render();
-      return;
-    }
-    const g = s.goals.find((g) => g.id === s.chatGoal) || s.goals[0];
-    s.chatGoal = "";
-    let response;
-    if (/overwhelm|stress|hard|tired/i.test(text))
-      response =
-        s.tone === "direct"
-          ? "Make the task smaller. Pick one thing you can do in five minutes, then reassess."
-          : s.tone === "gentle"
-          ? "You don’t have to carry the whole day at once. Take a breath; we can choose a five-minute start."
-          : "Let’s turn the volume down a little. One small task, then a pause to see how you feel.";
-    else if (/motiv|encourag/i.test(text))
-      response =
-        s.tone === "direct"
-          ? "Your next move doesn’t need to be impressive. It needs to be small enough to start. Pick your first unfinished task."
-          : s.tone === "gentle"
-          ? "A slow start is still a start. You’re allowed to take this one little thing at a time."
-          : "You don’t need a perfect day to make progress. Your next small win is right there.";
-    else {
-      response = `${
-        s.tone === "direct"
-          ? "Let’s make it actionable."
-          : s.tone === "gentle"
-          ? "We can take this gently."
-          : "Let’s find an easy place to start."
-      } ${
-        g
-          ? `For “${g.title},” here are a couple of small steps.`
-          : "Here are two little steps you could try."
-      } ${
-        s.answers[2]
-          ? `You mentioned “${s.answers[2]}” — keep the first step short.`
-          : ""
-      } Add only what works for you.`;
-      s.chatSuggestions = suggest(s, g).slice(0, 2);
-    }
-    s.messages.push({ role: "george", text: response });
-    render();
-  }, 850);
 }
 function completeOnboarding(approve) {
   if (approve)
@@ -1825,28 +1797,58 @@ document.addEventListener("click", async (e) => {
     case "goal-example":
       document.querySelector("[name=title]").value = v;
       break;
-    case "calendar-connect":
-    case "calendar-fail":
+    case "calendar-connect": {
+      cal.notice = "";
+      if (!calendarApi) { cal.notice = "Calendar connection needs the cloud setup. Continue without it for now."; render(); break; }
+      if (!navigator.onLine) { cal.notice = "Connect to the internet to link Google Calendar, or continue without it."; render(); break; }
       calendarBusy = true;
-      calendarError = false;
       render();
-      setTimeout(() => {
+      try {
+        // The server finds the account by number, so it must exist in the cloud.
+        persistAccount();
+        await accounts.sync(activePhone);
+        hadCalendarKey = !!calendarKey();
+        const key = calendarKey(true);
+        if (!key) throw Error("This browser can’t save the calendar link. Allow website data and try again.");
+        const url = await calendarApi.start(activePhone, key, location.origin + location.pathname);
+        persistAccount();
+        location.assign(url);
+      } catch (err) {
+        // A key made for this attempt was never registered; drop it so the page
+        // shows the real error instead of trying to load a schedule.
+        if (!hadCalendarKey) forgetDeviceKey(loginStorage, activePhone);
         calendarBusy = false;
-        calendarError = a === "calendar-fail";
-        s.calendar = !calendarError;
+        cal.notice = err.message;
         render();
-        if (s.calendar) toast("Your sample calendar is connected.");
-      }, 800);
+      }
+      break;
+    }
+    case "calendar-refresh":
+      cal.notice = "";
+      maybeLoadCalendar(true);
+      render();
       break;
     case "calendar-next":
-      calendarError = false;
+      cal.notice = "";
       go(s.onboarded ? "settings" : "apps");
       break;
-    case "calendar-disconnect":
-      s.calendar = false;
+    case "calendar-disconnect": {
+      calendarBusy = true;
       render();
-      toast("Calendar disconnected. Your tasks are unchanged.");
+      try {
+        if (calendarApi) await calendarApi.disconnect(activePhone, calendarKey());
+        forgetDeviceKey(loginStorage, activePhone);
+        cal = { ...emptyCalendar(), phone: activePhone };
+        s.googleCalendar = false;
+        toast("Google Calendar disconnected. Your tasks are unchanged.");
+      } catch (err) {
+        cal.notice = err.message;
+      } finally {
+        calendarBusy = false;
+        render();
+      }
       break;
+    }
     case "toggle-app":
       s.selectedApps = s.selectedApps.includes(v)
         ? s.selectedApps.filter((x) => x !== v)
@@ -1905,6 +1907,7 @@ document.addEventListener("click", async (e) => {
       const t = s.tasks.find((t) => t.id === id);
       if (t.done) {
         t.done = false;
+        if (activePhone) forgetPhoto(loginStorage, activePhone, localDay(now(s)), t.id);
         const owner = s.goals.find((g) => g.id === t.goalId);
         if (owner && owner.stepsDone > 0) owner.stepsDone--;
         reconcile(s);
@@ -1943,35 +1946,6 @@ document.addEventListener("click", async (e) => {
       closeModal();
       render();
       toast("Goal removed. Its daily tasks are still yours.");
-      break;
-    case "goal-steps":
-      s.chatGoal = id;
-      go("chat");
-      respond(
-        "Help me find smaller steps for " +
-          s.goals.find((g) => g.id === id).title
-      );
-      break;
-    case "chat-prompt":
-      respond(v);
-      break;
-    case "retry-chat":
-      respond(pendingMessage, true);
-      break;
-    case "accept-chat-task": {
-      const t = s.chatSuggestions.find((t) => t.id === id);
-      addTask(s, t);
-      s.chatSuggestions = s.chatSuggestions.filter((t) => t.id !== id);
-      render();
-      toast("“" + t.title + "” added to today.");
-      break;
-    }
-    case "edit-chat-task":
-      taskEditor(id, "chat");
-      break;
-    case "reject-chat-task":
-      s.chatSuggestions = s.chatSuggestions.filter((t) => t.id !== id);
-      render();
       break;
     case "settings-page":
       go(el.dataset.to);
@@ -2019,57 +1993,47 @@ document.addEventListener("click", async (e) => {
         )}" autocomplete="tel" required></label><div class="form-error" role="alert"></div><button class="button" type="submit">Save profile</button><p class="small muted">Changing your number moves this account and its tasks to the new number. You’ll use it next time you sign in. A number change needs internet; name changes also work offline.</p></form>`
       );
       break;
-    case "sample-photo": {
-      photo = new URL("george.png", location.href).href;
-      photoError = "";
-      photoDialog(photoTask);
-      break;
-    }
     case "submit-photo": {
-      if (!photo) {
-        photoError =
-          "Add or take a demo photo first. No attempt has been counted.";
-        photoDialog(photoTask);
-        break;
-      }
-      const result = document.querySelector("#photo-result").value;
-      if (result === "upload-fail") {
-        photoError =
-          "That photo couldn’t upload. Try again or replace it. This doesn’t count as a failed check.";
-        photoDialog(photoTask);
-        break;
-      }
+      if (!photo || photoBusy) break;
       const taskId = photoTask,
-        originVersion = modalVersion,
+        taken = photo,
+        phone = activePhone,
         originDay = s.day,
         originState = s;
+      const t = s.tasks.find((t) => t.id === taskId);
+      if (!t) break;
       photoBusy = true;
-      el.disabled = true;
-      el.textContent = "Checking your photo…";
-      setTimeout(() => {
-        photoBusy = false;
-        if (
-          originVersion !== modalVersion ||
-          originDay !== localDay(now(s)) ||
-          originState !== s
-        )
-          return;
-        const t = s.tasks.find((t) => t.id === taskId);
-        if (!t) return;
-        const before = stats(s).banked;
-        const outcome = photoAttempt(s, taskId, result === "pass" ? 0.92 : 0.5);
-        if (outcome === "retry") {
-          photoError = `I couldn’t quite see the completed task. Try another angle or a clearer photo. ${t.failures} of 3 checks tried.`;
-          if (modal.open) photoDialog(taskId);
-        } else {
-          closeModal();
-          completion(
-            t,
-            stats(s).banked > before ? [1] : [],
-            outcome === "supported"
-          );
-        }
-      }, 900);
+      photoError = "";
+      photoDialog(taskId);
+      const originVersion = modalVersion;
+      let result;
+      try {
+        result = checkPhoto && phone
+          ? await checkPhoto(phone, t.title, taken)
+          : { fallback: true, message: "Photo checking needs the cloud setup, so your photo counts as proof." };
+      } catch (problem) {
+        result = { error: problem.message };
+      }
+      photoBusy = false;
+      // Stop if the dialog was closed, the day rolled over or the account changed.
+      if (originVersion !== modalVersion || originDay !== localDay(now(s)) || originState !== s || phone !== activePhone) break;
+      if (result.error) {
+        photoError = result.error;
+        photoDialog(taskId);
+        break;
+      }
+      const before = stats(s).banked;
+      const outcome = result.fallback ? photoAttempt(s, taskId, 1) : photoAttempt(s, taskId, result.verdict === "fail" ? 0 : 1);
+      if (outcome === "retry") {
+        photo = null;
+        photoError = `${result.reason || "I couldn’t quite see the finished task."} ${t.failures} of 3 checks tried.`;
+        photoDialog(taskId);
+        break;
+      }
+      if (phone) keepPhoto(loginStorage, phone, localDay(now(s)), taskId, taken.keep);
+      photo = null;
+      closeModal();
+      completion(t, stats(s).banked > before ? [1] : [], outcome === "supported", result.fallback ? result.message : result.reason);
       break;
     }
     case "start-break":
@@ -2165,12 +2129,6 @@ document.addEventListener("click", async (e) => {
       );
       break;
     }
-    case "fail-next-chat":
-      s.failNextChat = true;
-      closeModal();
-      go("chat");
-      toast("Demo: George’s next reply will fail, with a retry option.");
-      break;
     case "sample-day": {
       if (USE_SUPABASE) { toast("Switch off Supabase in the config to use sample data."); break; }
       s = initial();
@@ -2222,24 +2180,19 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "photo-upload") {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!file.type.startsWith("image/") || file.size > 8 * 1024 * 1024) {
-      photoError =
-        "Choose an image under 8 MB. This doesn’t count as a failed check.";
-      photoDialog(photoTask);
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      photo = reader.result;
-      photoError = "";
-      photoDialog(photoTask);
-    };
-    reader.onerror = () => {
-      photoError =
-        "That image couldn’t be opened. Please try another. No attempt was counted.";
-      photoDialog(photoTask);
-    };
-    reader.readAsDataURL(file);
+    const taskId = photoTask;
+    photo = null;
+    photoError = "";
+    photoPreparing = true;
+    photoDialog(taskId);
+    const originVersion = modalVersion;
+    preparePhoto(file).then(
+      (ready) => { photo = ready; },
+      (problem) => { photoError = problem.message; }
+    ).finally(() => {
+      photoPreparing = false;
+      if (originVersion === modalVersion && photoTask === taskId) photoDialog(taskId);
+    });
   }
 
 if (e.target.id === "avatar-upload") {
@@ -2274,9 +2227,6 @@ if (e.target.id === "avatar-upload") {
     .finally(() => { input.value = ""; });
 }
 
-});
-document.addEventListener("input", (e) => {
-  if (e.target.name === "message") chatDraft = e.target.value;
 });
 document.addEventListener("submit", async (e) => {
   const form = e.target;
@@ -2357,9 +2307,8 @@ document.addEventListener("submit", async (e) => {
         fail("Choose a duration from 1 to 1,440 minutes, or leave it blank.");
         break;
       }
-      if (taskDraft.kind === "suggestion" || taskDraft.kind === "chat") {
-        const source =
-          taskDraft.kind === "chat" ? s.chatSuggestions : s.suggestions;
+      if (taskDraft.kind === "suggestion") {
+        const source = s.suggestions;
         Object.assign(
           source.find((t) => t.id === taskDraft.id),
           data
@@ -2434,9 +2383,6 @@ document.addEventListener("submit", async (e) => {
       }
       break;
     }
-    case "chat":
-      if (values.message.trim()) respond(values.message.trim());
-      break;
   }
 });
 modal.addEventListener("cancel", (e) => {
@@ -2506,6 +2452,30 @@ function openHiddenReport() {
 }
 window.addEventListener("hashchange", openHiddenReport);
 setupPWA({ beforeUpdate: () => { persistAccount(); return !storageFailed; } });
+// Google sends people back with ?calendar=connected|denied|missing|error.
+const calendarResult = new URL(location.href).searchParams.get("calendar");
+if (calendarResult) {
+  const cleanURL = new URL(location.href);
+  cleanURL.searchParams.delete("calendar");
+  history.replaceState(null, "", cleanURL);
+  if (s.loginVerified && activePhone) {
+    // Reloading would restart onboarding, so resume on the calendar step.
+    s.screen = "calendar";
+    if (calendarResult === "connected") toast("Google Calendar connected.");
+    else cal.notice = CALENDAR_RESULTS[calendarResult] || CALENDAR_RESULTS.error;
+  } else {
+    // On iPhone, Google may return to Safari instead of the Home Screen app.
+    openModal("Back to First Things", `<p>${calendarResult === "connected"
+      ? "Your Google Calendar is connected."
+      : "Google Calendar wasn’t connected."} Switch back to your First Things Home Screen app to continue.</p><button class="button" data-action="close-modal">Got it</button>`);
+  }
+}
+// Returning from Google in another window: check again when this one is seen.
+const recheckCalendar = () => { if (!document.hidden && s.screen === "calendar" && cal.phase !== "ready") maybeLoadCalendar(true); };
+window.addEventListener("focus", recheckCalendar);
+document.addEventListener("visibilitychange", recheckCalendar);
+// Back-button return from Google restores this page from cache with the busy state.
+window.addEventListener("pageshow", (e) => { if (e.persisted && calendarBusy) { calendarBusy = false; render(); } });
 render();
 openHiddenReport(); // handles a page that loads with #progress already set
 syncAccounts();

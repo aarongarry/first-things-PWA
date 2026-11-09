@@ -342,7 +342,7 @@ nav button.active svg {
   box-sizing: content-box;
 }
 
-/* ---------- chat ---------- */
+/* ---------- George bubbles (onboarding) ---------- */
 .bubble,
 .george-bubble .bubble {
   background: var(--sticky-blue);
@@ -605,13 +605,11 @@ dialog { border-color: #cfcabb; box-shadow: 6px 8px 0 rgba(37, 37, 42, 0.18); }
 .button.secondary, .button.ghost, .button.danger { background: transparent; }
 .add-task { border-width: 1.5px; }
 
-/* chat, toast, dialogs: flat */
+/* bubbles, toast, dialogs: flat */
 .bubble, .george-bubble .bubble { background: transparent; border: 1.5px solid #bdb8a8; border-radius: 6px; }
 .user-bubble { background: #ebe8df; border-radius: 6px; }
 .toast, .update-banner { border-radius: 6px; }
 dialog { box-shadow: none; border-width: 1.5px; }
-.george-home { background: transparent; border: 1.5px dashed #bdb8a8; border-radius: 6px; box-shadow: none; }
-.george-home small, .george-home span { color: var(--ink-soft); }
 .icon-btn.blue, .icon-btn { background: transparent; color: var(--ink); }
 
 /* ---------- handwriting, plain textured paper, smaller top card ---------- */
@@ -627,7 +625,7 @@ h1 { font-size: 34px; }
 .task-title small, small, .small, .muted, .body-copy { font-size: 15px; }
 .section-label, .overline, .overline-dark { font-size: 14px; font-weight: 400; letter-spacing: 1.2px; }
 .button { font-size: 18px; font-weight: 400; }
-.setting-row b, .break-card b, .access-strip b, .george-home b { font-size: 18px; font-weight: 400; }
+.setting-row b, .break-card b, .access-strip b { font-size: 18px; font-weight: 400; }
 nav button { font-size: 14px; }
 .field > span, .field-label { font-size: 16px; font-weight: 400; }
 .toast, .update-banner, .database-status { font-size: 15px; }
@@ -672,7 +670,7 @@ nav button { font-size: 14px; }
 .progress-line, .goal-track { border-radius: 3px 8px 4px 7px / 7px 3px 8px 4px !important; }
 
 /* wobbly boxes instead of perfect rectangles */
-.progress-card, .goal-card, .button, .add-task, .george-home, .bubble, .user-bubble, .toast,
+.progress-card, .goal-card, .button, .add-task, .bubble, .user-bubble, .toast,
 .update-banner, input, select, textarea, .chips button, .due-pill, .pill, .kr-card, .suggestion-card,
 .card, .empty-state, .calendar-event, .app-choice, .choice, .radio, dialog {
   border-radius: var(--wob) !important;

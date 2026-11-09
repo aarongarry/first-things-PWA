@@ -17,7 +17,7 @@ export function normalizePhone(value) {
 export function accountSnapshot(s) {
   return copy({
     profile: s.profile, onboarded: s.onboarded, tone: s.tone,
-    answers: s.answers, calendar: s.calendar, tutorial: s.tutorial,
+    answers: s.answers, googleCalendar: s.googleCalendar === true, tutorial: s.tutorial,
     goals: s.goals, tasks: s.tasks,
     daily: { day: s.day, templates: s.templates, ledger: s.ledger,
       activeUntil: s.activeUntil, requestedBreaks: s.requestedBreaks,
