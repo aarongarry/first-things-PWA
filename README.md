@@ -97,6 +97,34 @@ The redirect may open **Safari**, which can have a different login session from 
 
 Apple references: [App triggers](https://support.apple.com/en-om/guide/shortcuts/apde31e9638b/ios), [API requests](https://support.apple.com/en-mt/guide/shortcuts/apd58d46713f/ios), [Dictionary values](https://support.apple.com/en-ie/guide/shortcuts/apdf01294032/ios).
 
+## Task reminders (push notifications)
+
+Settings → **Daily reminder** lets someone pick a time. Once a day at that time (their own time zone), if they still have unfinished tasks, their phone shows "3 first things left. A small step now, a little freedom later." Nothing is sent when the list is done.
+
+It needs a one-time setup, because a website cannot wake a phone by itself. A small Supabase function sends the notifications.
+
+1. **Make a key pair** (on any computer with Node): `npx web-push generate-vapid-keys`. You get a public and a private key.
+2. **Public key into the app:** paste the public key into `VAPID_PUBLIC_KEY` in `docs/supabase-config.js`. The private key never goes in the app.
+3. **Database:** run `supabase/reminders.sql` in the SQL Editor (after `pwa-demo-accounts.sql`). It is repeatable.
+4. **Deploy the sender** with the Supabase CLI:
+   ```sh
+   supabase secrets set VAPID_PUBLIC_KEY=... VAPID_PRIVATE_KEY=... VAPID_SUBJECT=mailto:YOUR_EMAIL CRON_SECRET=pick-a-long-random-string
+   supabase functions deploy send-reminders --no-verify-jwt
+   ```
+   Use your own email in `VAPID_SUBJECT`. The function refuses requests without the `CRON_SECRET`.
+5. **Run it every 5 minutes.** Turn on the `pg_cron` and `pg_net` extensions (Database → Extensions), then run this in the SQL Editor with your project URL and secret:
+   ```sql
+   select cron.schedule('first-things-reminders', '*/5 * * * *', $$
+     select net.http_post(
+       url := 'https://YOUR-PROJECT.supabase.co/functions/v1/send-reminders',
+       headers := jsonb_build_object('x-cron-secret', 'the-same-secret')
+     );
+   $$);
+   ```
+6. **On the phone:** open the **Home Screen app** (iPhone needs iOS 16.4 or newer and the app added to the Home Screen), go to Settings → Daily reminder, pick a time, and tap **Turn on reminders**. Allow notifications when asked.
+
+How it behaves: a reminder goes out once per day, only within 3 hours after the chosen time, and only if the synced list has unfinished tasks. The count comes from the last synced list, so keep the app open until **All changes synced** appears. Turning reminders off, or removing the app, stops them. To test quickly, set the time a few minutes ahead and leave a task unchecked.
+
 ## Phone accounts and offline use
 
 - Enter a phone number to create or open a **demo account**. No SMS or verification code is used. A name is optional; returning accounts keep their saved name.

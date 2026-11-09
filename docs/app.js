@@ -23,6 +23,7 @@ import { USE_SUPABASE, SUPABASE_URL, SUPABASE_KEY } from "./supabase-config.js";
 import { createCloud } from "./cloud.js";
 import { normalizePhone, accountSnapshot, applySnapshot, createAccountStore } from "./offline.js";
 import { shortcutConfig, checkInstagram } from "./shortcut.js";
+import { reminderSupport, reminderPrefs, enableReminders, disableReminders, formatTime } from "./reminders.js";
 import { setupPWA } from "./pwa.js";
 const root = document.querySelector("#app"),
   modal = document.querySelector("#modal");
@@ -1077,7 +1078,8 @@ function settings() {
     .join(
       ""
     )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>App shortcuts</b><small>Set up your iPhone reminder</small></span><span>›</span></button>
-    <button class="setting-row" data-action="share-app">
+    <button class="setting-row" data-action="reminders-setup">${icon("clock")}<span><b>Daily reminder</b><small>${reminderSummary()}</small></span><span>›</span></button>
+<button class="setting-row" data-action="share-app">
   ${icon("send")}
   <span>
     <b>Share with Friends</b>
@@ -1153,6 +1155,61 @@ async function instagramSetup(appName = "Instagram") {
     if (version === modalVersion && phone === activePhone) openModal("Let’s reconnect.", `<p>${esc(problem.message)}</p><button class="button" data-action="instagram-setup">Try again</button>`);
   }
 }
+
+// ---- Task reminders (push notifications) ----
+function remindersModal(message = "") {
+  const support = reminderSupport();
+  const prefs = reminderPrefs(activePhone);
+  let body;
+  if (!USE_SUPABASE) body = "<p>Reminders need the cloud connection. Turn it on in the app’s config first.</p>";
+  else if (!support.ok && support.reason === "setup")
+    body = "<p>Reminders aren’t set up for this app yet. Add the reminder key in <b>supabase-config.js</b> (see the README), then try again.</p>";
+  else if (!support.ok && support.reason === "install")
+    body = `<p>On iPhone, reminders work from the Home Screen app. Add First Things to your Home Screen, open it from there, and come back to this screen.</p>${btn("Show me how", "install-help", "secondary", "data-install")}`;
+  else if (!support.ok) body = "<p>This browser can’t show reminders. Try the installed app on your phone.</p>";
+  else
+    body = `<p>A nudge on your phone when you still have first things to finish. One reminder a day, at the time you pick, and only if you have tasks left.</p>
+      <label class="field"><span>Remind me at</span><input type="time" id="reminder-time" value="${esc(prefs.time)}" required></label>
+      ${prefs.on ? btn("Save time", "reminders-enable") + btn("Turn off reminders", "reminders-disable", "secondary") : btn("Turn on reminders", "reminders-enable")}
+      <p class="small muted">${prefs.on ? "Reminders are on for this phone." : "You’ll be asked to allow notifications."} Keep First Things open until All changes synced shows, so the reminder counts your latest tasks.</p>`;
+  openModal("A little reminder.", `${body}<p id="reminder-result" class="small" role="status">${esc(message)}</p>`);
+}
+async function remindersEnable() {
+  const time = document.querySelector("#reminder-time")?.value;
+  const result = document.querySelector("#reminder-result");
+  const phone = activePhone;
+  const say = (text) => { if (result) result.textContent = text; };
+  try {
+    say("Turning on reminders…");
+    await enableReminders({
+      cloud: createCloud(), phone, time,
+      beforeSave: async () => {
+        if (!navigator.onLine || legacyPhone || storageFailed) throw Error("Connect to the internet and wait for All changes synced first.");
+        persistAccount();
+        await accounts.sync(phone);
+        const record = accounts.read(phone);
+        if (!record?.linked || record.retired || record.pendingMove) throw Error("Wait for All changes synced, then try again.");
+      },
+    });
+    if (phone === activePhone) { render(); remindersModal(`Done. We’ll remind you at ${formatTime(time)} if you still have tasks left.`); }
+  } catch (problem) {
+    say(problem.message);
+  }
+}
+async function remindersDisable() {
+  try {
+    await disableReminders({ cloud: createCloud(), phone: activePhone });
+    render();
+    remindersModal("Reminders are off.");
+  } catch (problem) {
+    const result = document.querySelector("#reminder-result");
+    if (result) result.textContent = problem.message;
+  }
+}
+const reminderSummary = () => {
+  const prefs = reminderPrefs(activePhone);
+  return prefs.on ? `On · ${formatTime(prefs.time)} each day` : "Get a nudge on your phone";
+};
 
 // ---- Progress report ----
 async function refreshOkrs() {
@@ -1924,6 +1981,15 @@ document.addEventListener("click", async (e) => {
       break;
     case "instagram-setup":
       await instagramSetup(v || "Instagram");
+      break;
+    case "reminders-setup":
+      remindersModal();
+      break;
+    case "reminders-enable":
+      await remindersEnable();
+      break;
+    case "reminders-disable":
+      await remindersDisable();
       break;
     case "shortcut-copy":
       if (instagramConfig && ["url", "apiKey", "reminder"].includes(v)) {
