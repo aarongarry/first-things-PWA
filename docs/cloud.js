@@ -20,6 +20,10 @@ export function createCloud(fetcher = fetch) {
       account_phone: phone, new_phone: target, new_name: name,
       expected_version: version, request_id: requestId,
     }),
+    reminderSave: (phone, subscription, time, zone) => rpc('first_things_reminder_save', {
+      account_phone: phone, subscription, remind_at: time, zone,
+    }),
+    reminderRemove: (phone, endpoint) => rpc('first_things_reminder_remove', { account_phone: phone, endpoint_url: endpoint }),
     load: phone => rpc('first_things_demo_load', { account_phone: phone }),
     save: (phone, state, version) => rpc('first_things_demo_save', {
       account_phone: phone, payload: state, expected_version: version,
