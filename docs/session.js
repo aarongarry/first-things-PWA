@@ -11,7 +11,7 @@ export function restoreLogin(state, storage) {
     state.profile = { name: saved.profile.name, phone: saved.profile.phone };
     state.loginVerified = true;
     state.onboarded = saved.onboarded;
-    state.screen = saved.onboarded ? 'home' : 'tone';
+    state.screen = saved.onboarded ? 'home' : 'firstTask';
   } catch {
     // Unavailable or invalid browser storage must not prevent using the demo.
   }

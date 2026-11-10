@@ -72,7 +72,7 @@ let statusFadeTimer;
 function databaseStatus(phase, message = "") {
   const element = document.querySelector("#database-status");
   const labels = {
-    welcome: "Your day, on any device.",
+    welcome: "Sign in to sync your tasks.",
     local: "Saved on this device",
     offline: "Offline · Saved on this device. Syncs when you reconnect.",
     syncing: "Saved on this device · Syncing…",
@@ -217,13 +217,15 @@ function activateAccount(phone, name = "") {
   const seed = initial();
   seed.profile = { phone, name: name || "Friend" };
   seed.loginVerified = true;
+  // New accounts opt into app restrictions later in Settings. Saved choices restore below.
+  seed.selectedApps = [];
   s = seed;
   try {
     applySnapshot(s, accounts.open(phone, accountSnapshot(seed)).local);
     storageFailed = false;
   } catch { storageFailed = true; databaseStatus("storage"); }
   lastSnapshot = accountSnapshot(s);
-  s.screen = s.onboarded ? "home" : "tone";
+  s.screen = s.onboarded ? "home" : "firstTask";
   rememberLogin();
 }
 function signOut() {
@@ -263,7 +265,8 @@ const icons = {
   goal: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/>',
   chat: '<path d="M21 11a9 9 0 0 1-9 9H4l-2 2v-10a9 9 0 1 1 19-1Z"/><path d="M7 11h10M7 15h6"/>',
 settings: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
-unlock:
+  lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
+  unlock:
     '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 7-2M12 14v3"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   chart: '<path d="M5 20v-8M12 20V5M19 20v-5"/>',
@@ -285,24 +288,24 @@ const icon = (name) =>
   }</svg>`;
 const btn = (text, action, cls = "", attrs = "") =>
   `<button class="button ${cls}" data-action="${action}" ${attrs}>${text}</button>`;
-const avatar = () => '<img class="avatar" src="george.png" alt="George">';
+const avatar = () => '<img class="avatar" src="george-stick.svg" alt="George">';
 const bubble = (text) =>
   `<div class="george-bubble">${avatar()}<div class="bubble"><strong>GEORGE</strong>${text}</div></div>`;
 const tones = {
   gentle: {
     label: "Gentle",
     symbol: "☁",
-    example: "One small step is enough. I’m here with you.",
+    example: "One task at a time.",
   },
   balanced: {
     label: "Balanced",
     symbol: "✳",
-    example: "You’ve got this. Let’s make a little progress.",
+    example: "Ready when you are.",
   },
   direct: {
     label: "Direct",
     symbol: "↗",
-    example: "Pick one task. Start small, and give it your attention.",
+    example: "Pick a task and get started.",
   },
 };
 const apps = [
@@ -310,7 +313,7 @@ const apps = [
     name: "Instagram",
     short: "◎",
     color: "#d54882",
-    desc: "A little less endless scrolling",
+    desc: "Pause Instagram during tasks",
   },
   {
     name: "TikTok",
@@ -322,7 +325,7 @@ const apps = [
     name: "YouTube",
     short: "▶",
     color: "#ef514f",
-    desc: "Make your watch time intentional",
+    desc: "Pause YouTube during tasks",
   },
   {
     name: "Reddit",
@@ -334,13 +337,13 @@ const apps = [
     name: "X",
     short: "𝕏",
     color: "#1a2238",
-    desc: "Give the feed a little pause",
+    desc: "Pause the feed during tasks",
   },
   {
     name: "Snapchat",
     short: "◉",
     color: "#d2a800",
-    desc: "Catch up after a small win",
+    desc: "Catch up during a break",
   },
 ];
 function resizeAvatar(file, size = 256) {
@@ -426,25 +429,32 @@ function navigation(active) {
     .join("")}</nav>`;
 }
 function render() {
-
+  const previousProgress = root.querySelector('[role="progressbar"]')?.getAttribute("aria-valuenow");
   rollover(s);
   reconcile(s);
   const map = {
     welcome: welcome,
+    firstTask: firstTask,
+    switchAccount: () => welcome(true),
     tone: tone,
-    conversation: conversation,
-    firstGoal: firstGoal,
     calendar: calendar,
     apps: appSelection,
     breaks: breakPrefs,
-    tutorial: tutorial,
-    suggestions: suggestions,
     home: home,
     goals: goals,
     progress: progressReport,
     settings: settings,
   };
   root.innerHTML = (map[s.screen] || home)();
+  const progressBar = root.querySelector('[role="progressbar"]');
+  if (previousProgress !== undefined && previousProgress !== null && progressBar &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const next = progressBar.getAttribute("aria-valuenow");
+    if (next !== previousProgress) progressBar.querySelector("i")?.animate(
+      [{ width: `${previousProgress}%` }, { width: `${next}%` }],
+      { duration: 280, easing: "ease-out" }
+    );
+  }
   persistAccount();
   if (["calendar", "home", "settings"].includes(s.screen)) maybeLoadCalendar();
   if (s.screen === "conversation")
@@ -458,8 +468,8 @@ function render() {
 // ---- Back button support ----
 // Every screen change is saved as a browser history entry, so the phone's Back
 // gesture/button returns to the previous screen instead of leaving the app.
-const ONBOARDING_SCREENS = ["welcome", "tone", "conversation", "firstGoal", "calendar", "apps", "breaks", "tutorial", "suggestions"];
-const MAIN_SCREENS = ["home", "goals", "progress", "settings"];
+const ONBOARDING_SCREENS = ["welcome", "firstTask"];
+const MAIN_SCREENS = ["home", "goals", "progress", "settings", "switchAccount"];
 function syncHistory() {
   if (history.state?.ft === s.screen) return; // already recorded (also true right after Back)
   // Keep the hidden Progress route in the address; every other screen uses the plain address.
@@ -482,23 +492,34 @@ window.addEventListener("popstate", (event) => {
   root.scrollTop = 0;
   if (target === "progress") void refreshOkrs();
 });
-function welcome() {
-  return `<section class="page welcome"><div class="wordmark"><span class="brand-mark">✓</span>first things<span class="brand-period">.</span></div><div class="hero-art"><img src="george.png" alt="George, your friendly blue companion"><span class="hello">Hey, I’m George!</span></div><h1>First, your goals.<br><span>Then, your scroll.</span></h1><p class="body-copy">Make a little progress on what matters.<br>Unlock a little time for everything else.</p><form data-form="signup" novalidate><label class="field"><span>Your name <small>(optional for returning users)</small></span><input name="name" value="${esc(
-    s.profile.name
+function welcome(switching = false) {
+  return `<section class="page welcome">${switching ? `<div class="step-top"><button class="back" data-action="cancel-switch-account">${icon("back")} Back</button></div>` : `<div class="wordmark"><span class="brand-mark">✓</span>first things<span class="brand-period">.</span></div><div class="hero-art"><img src="george-stick.svg" alt="George, your pencil-sketch guide"><span class="hello">Hey, I’m George!</span></div>`}<h1>${switching ? "Switch account" : "Sign in"}</h1><p class="body-copy">${switching ? "Sign in with a different phone number." : "Use your phone number to save and sync your tasks."}</p><form data-form="signup" novalidate><label class="field"><span>Your name <small>(optional for returning users)</small></span><input name="name" value="${esc(
+    switching ? "" : s.profile.name
   )}" placeholder="Your first name" autocomplete="given-name" maxlength="40"></label><label class="field"><span>Phone number</span><input type="tel" name="phone" value="${esc(
-    s.profile.phone
+    switching ? "" : s.profile.phone
   )}" placeholder="(555) 123-4567" autocomplete="tel"></label>${
     error ? `<div class="error" role="alert">${esc(error)}</div>` : ""
-  }<button class="button">Continue with phone number</button><p class="privacy-note">Use the same number to find your account.<br>No code or text message. Anyone who knows your number can open your account, so keep private details out of it.</p></form><button class="button secondary install-button" data-install>Install First Things</button><p class="install-caption">Keep your day one tap away. Works offline.</p></section>`;
+  }<button class="button">Continue with phone number</button><p class="privacy-note">Use the same number to find your account.<br>No code or text message. Anyone who knows your number can open your account, so keep private details out of it.</p></form>${switching ? '<button class="button ghost" data-action="sign-out">Sign out instead</button>' : '<button class="button secondary install-button" data-install>Install First Things</button><p class="install-caption">Works offline after installation.</p>'}</section>`;
+}
+function firstTask() {
+  return `<section class="page"><div class="step-top"><button class="back" data-action="edit-number">${icon("back")} Back</button><span>ONE QUICK STEP</span></div><h1>Add your first task</h1><p class="body-copy">You can add more anytime.</p>${bubble("I’m George. Tap a task’s checkbox when it’s done.")}<form data-form="first-task" novalidate><label class="field"><span>Your first task</span><input name="title" placeholder="Review one page of notes" maxlength="180" value="${esc(s.firstTaskDraft || "")}" autofocus></label>${error ? `<div class="error" role="alert">${esc(error)}</div>` : ""}<button class="button">Add task & start my day</button></form><p class="small muted">Calendar, app shortcuts, and break preferences are available later in Settings.</p></section>`;
+}
+function georgeTip() {
+  if (s.tutorial) return "";
+  const finished = s.tasks.some(t => t.done);
+  const text = finished
+    ? 'Calendar, app shortcuts, and break preferences are in Settings.'
+    : 'Tap a checkbox to finish a task. Use + to add another.';
+  return `<aside class="george-tip" aria-label="Tip from George">${bubble(text)}<button class="text-link" data-action="dismiss-tip">${finished ? "Got it" : "Hide tips"}</button></aside>`;
 }
 function tone() {
   return step(
-    s.onboarded ? "George, your way." : "Meet your new<br>first-things friend.",
+    s.onboarded ? "George’s encouragement" : "Meet George",
     s.onboarded
-      ? "Your choice changes his encouragement right away."
+      ? "Choose how George talks to you."
       : "I’m George. I’ll help turn your big intentions into small, doable things.",
     1,
-    `<div class="george-intro">${avatar()}<span>A little help. A little accountability.<br>Always on your side.</span></div><p class="field-label">How should I cheer you on?</p>${Object.entries(
+    `<div class="george-intro">${avatar()}<span>Choose the tone of George’s tips.</span></div><p class="field-label">Encouragement style</p>${Object.entries(
       tones
     )
       .map(
@@ -710,7 +731,7 @@ function calendar() {
     )}${elsewhere ? disconnect : ""}${skip}`;
   }
   return step(
-    "A little context<br>for your day.",
+    "Google Calendar",
     "Connecting a calendar helps George see where a small task might fit. It’s completely optional.",
     4,
     `<div class="calendar-illustration">${icon("calendar")}<span>Make space,<br>not more pressure.</span></div>${body}${
@@ -754,7 +775,7 @@ function appSelection() {
 function breakPrefs() {
   const st = stats(s);
   return step(
-    "Progress deserves<br>a little breathing room.",
+    "Earned breaks",
     "Choose how many 10-minute breaks you’d like to earn. Start an earned break whenever you’re ready.",
     6,
     `<div class="break-hero">${icon(
@@ -859,8 +880,8 @@ function suggestions() {
 function nextBreakText() {
   const st = stats(s);
   if (!st.total) return "Add a task to start making progress.";
-  if (!st.remaining) return "Your list is complete. Enjoy your time.";
-  if (st.active) return "Your selected apps are open. Take a breath.";
+  if (!st.remaining) return "All tasks complete.";
+  if (st.active) return "Your selected apps are available during this break.";
   if (st.next) {
     const left = Math.max(0, st.next.at - st.done);
     return `${left} more task${
@@ -878,29 +899,25 @@ function home() {
     todo = s.tasks.filter((t) => !t.done).sort((x, y) => urgencyRank(x) - urgencyRank(y)),
     reminderNote = st.reminders ? ` · ${st.reminders} reminder${st.reminders === 1 ? "" : "s"}` : "",
     photos = done.some((t) => t.photo) ? todaysPhotos() : {};
-  return `<section class="page daily"><header class="daily-header"><div><span class="section-label">${today()}</span><h1>Your day, ${esc(
+  const allDone = s.tasks.length > 0 && todo.length === 0;
+  const progress = allDone ? 100 : st.percent;
+  return `<section class="page daily"><header class="daily-header"><div><span class="section-label">${today()}</span><h1>Today, ${esc(
     name
   )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${
     s.profile.avatar
       ? `<img src="${esc(s.profile.avatar)}" alt="" class="profile-avatar">`
       : esc(name[0]?.toUpperCase())
-  }</button></header><div class="progress-card"><div><span class="overline">YOUR FIRST THINGS</span><h2>${
-    st.total
+  }</button></header>${georgeTip()}<div class="progress-card"><div><span class="overline">TODAY’S PROGRESS</span><h2>${
+    allDone
+      ? "All done for today."
+      : st.total
       ? st.remaining === 0
-        ? "Look at you go."
-        : `${st.remaining} little step${st.remaining === 1 ? "" : "s"} left.`
+        ? "Tasks done. Reminders left."
+        : `${st.remaining} task${st.remaining === 1 ? "" : "s"} left.`
       : s.tasks.length
       ? "Just reminders today."
-      : "A fresh start."
-  }</h2><span class="progress-detail">${st.done} of ${
-    st.total
-  } tasks complete${reminderNote}</span></div><div class="progress-ring" style="--progress:${
-    st.percent
-  }%"><span><b>${
-    st.percent
-  }<small>%</small></b><em>complete</em></span></div><div class="progress-line"><i style="width:${
-    st.percent
-  }%"></i></div></div><button class="access-strip ${
+      : "No tasks yet."
+  }</h2><span class="progress-detail">${allDone ? `${done.length} of ${s.tasks.length} complete · Enjoy your day.` : `${st.done} of ${st.total} tasks complete${reminderNote}`}</span></div><div class="progress-ring" style="--progress:${progress}%"><span><b>${progress}<small>%</small></b><em>complete</em></span></div><div class="progress-line" role="progressbar" aria-label="Today’s tasks" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><i style="width:${progress}%"></i></div></div>${s.selectedApps.length && st.remaining ? `<button class="access-strip ${
     st.blocked ? "" : "unlocked"
   }" data-action="try-apps">${icon(st.blocked ? "lock" : "unlock")}<span><b>${
     st.active
@@ -912,21 +929,21 @@ function home() {
       : "Your apps are unlocked"
   }</b><small>${
     st.active
-      ? "A little time for yourself."
+      ? "10-minute break"
       : st.blocked
-      ? "A little focus now. A little freedom later."
+      ? "Finish your tasks or use an earned break"
       : st.remaining
       ? "Pick your apps in Settings."
       : "Until midnight, unless you add a task."
-  }</small></span><span>›</span></button><div class="break-card"><span class="break-icon">${icon(
+  }</small></span><span>›</span></button>` : ""}${st.remaining && (st.active || st.banked) ? `<div class="break-card"><span class="break-icon">${icon(
     "leaf"
   )}</span><div><b>${
     st.active
       ? "<span data-countdown></span> left"
       : st.banked
       ? `${st.banked} break${st.banked === 1 ? "" : "s"} waiting for you`
-      : "A breather is on the way"
-  }</b><small>${nextBreakText()}</small></div>${
+      : "No breaks available"
+  }</b><small>${st.active ? "Timer running" : "10 minutes each"}</small></div>${
     st.banked && st.remaining && !st.active
       ? '<button data-action="start-break">Start</button>'
       : `${
@@ -934,22 +951,18 @@ function home() {
         }<button data-action="break-detail" aria-label="Break details">${icon(
           "clock"
         )}</button>`
-  }</div><div class="task-heading"><h2>Today’s list <span>${
+  }</div>` : ""}<div class="task-heading"><h2>Today’s list <span>${
     s.tasks.length
   }</span></h2><button class="icon-btn blue" data-action="new-task" aria-label="Add a task">${icon(
     "plus"
   )}</button></div>${
     !s.tasks.length
-      ? `<div class="empty-state">${icon(
-          "spark"
-        )}<h3>A little space for possibility.</h3><p>Add something you want to do today.<br>A few words are all you need.</p>${btn(
+      ? `<div class="empty-state"><h3>No tasks yet</h3><p>Add your first task for today.</p>${btn(
           "Add my first task",
           "new-task",
           "secondary"
         )}</div>`
-      : todo.length
-      ? todo.map((t) => taskRow(t)).join("")
-      : `<div class="completed-banner"><span>✦</span><h3>First things, done.</h3><p>You made time for what matters.<br>Your apps are fully unlocked.</p><button class="text-link" data-action="celebrate">Enjoy this little moment</button></div>`
+      : todo.map((t) => taskRow(t)).join("")
   }${
     done.length
       ? `<div class="done-label">COMPLETED · ${done.length}</div>${done
@@ -958,11 +971,11 @@ function home() {
       : ""
   }<button class="add-task" data-action="new-task">${icon(
     "plus"
-  )} Add a little first thing</button>${
+  )} Add task</button>${
     s.googleCalendar && cal.phase === "ready"
       ? '<div class="calendar-mini">' + icon("calendar") + " " + calendarLine() + "</div>"
       : ""
-  }<p class="day-note">A new day starts at midnight. <button data-action="day-rules">How it works</button></p></section>${navigation(
+  }</section>${navigation(
     "home"
   )}`;
 }
@@ -976,7 +989,7 @@ function taskRow(t, photos = {}) {
   }" aria-label="${t.done ? "Mark incomplete:" : "Complete:"} ${esc(
     t.title
   )}" role="checkbox" aria-checked="${t.done}">${
-    t.done ? "✓" : ""
+    t.done ? '<svg class="task-checkmark" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 6L20 5"/></svg>' : ""
   }</button><button class="task-title" data-action="edit-task" data-id="${
     t.id
   }"><b>${esc(t.title)}</b><small>${
@@ -990,7 +1003,7 @@ function taskRow(t, photos = {}) {
     ]
       .filter(Boolean)
       .map(esc)
-      .join(" · ") || "Your own little first thing"
+      .join(" · ") || ""
   }</small></button>${
     t.photo && !t.done
       ? `<span class="photo-indicator">${icon("camera")}</span>`
@@ -1025,9 +1038,9 @@ function goalMeta(g, associated) {
 }
 function goals() {
   const totalSteps = s.goals.reduce((n, g) => n + (g.stepsDone || 0), 0);
-  return `<section class="page"><div class="page-top"><span class="section-label">THE BIGGER PICTURE</span><button class="icon-btn blue" data-action="new-goal" aria-label="Add goal">${icon(
+  return `<section class="page"><div class="page-top"><span class="section-label">YOUR GOALS</span><button class="icon-btn blue" data-action="new-goal" aria-label="Add goal">${icon(
     "plus"
-  )}</button></div><h1>Things worth<br>working toward<span class="blue">.</span></h1><p class="body-copy">${totalSteps ? `${totalSteps} step${totalSteps === 1 ? "" : "s"} finished across your goals.` : "Your daily steps have somewhere to go."}</p>${
+  )}</button></div><h1>Goals</h1><p class="body-copy">${totalSteps ? `${totalSteps} step${totalSteps === 1 ? "" : "s"} finished across your goals.` : "Link tasks to a goal to track progress."}</p>${
     s.goals.length
       ? s.goals
           .map((g, i) => {
@@ -1054,86 +1067,42 @@ function goals() {
             }</div>`;
           })
           .join("")
-      : `<div class="empty-state"><h3>What matters to you next?</h3><p>Your daily tasks are still here. Add a new bigger goal whenever you’re ready.</p></div>`
+      : `<div class="empty-state"><h3>No goals yet</h3><p>Add a goal to group related tasks.</p></div>`
   }<button class="add-task" data-action="new-goal">${icon(
     "plus"
-  )} Add another goal</button></section>${navigation("goals")}`;
+  )} Add goal</button></section>${navigation("goals")}`;
 }
 function settings() {
-  return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>A little more you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">
-  ${s.profile.avatar
-    ? `<img src="${esc(s.profile.avatar)}" alt="Profile picture" class="profile-avatar">`
-    : esc(s.profile.name[0]?.toUpperCase() || "?")
-  }
-</span><div><b>${esc(s.profile.name)}</b><small>${esc(
-    s.profile.phone
-  )}</small></div><button class="text-link profile-edit" data-action="profile" aria-label="Edit profile">Edit ${icon(
-    "edit"
-  )}</button>
-  <label for="avatar-upload" class="text-link profile-upload">
-  <input type="file" id="avatar-upload" accept="image/png,image/jpeg,image/webp" style="display:none;">
-  <span>${s.profile.avatar ? "Change photo" : "Add photo"}</span>
-</label>${
-    s.profile.avatar
-      ? `<button class="text-link profile-remove" data-action="remove-avatar">Remove</button>`
-      : ""
-  }
-  </div><p class="section-label">YOUR DAILY RHYTHM</p>${[
-    [
-      "apps",
-      "lock",
-      "Restricted apps",
-      s.selectedApps.length + " selected · changes apply immediately",
-    ],
-    [
-      "breaks",
-      "leaf",
-      "Earned breaks",
-      s.requestedBreaks + " preferred · 10 minutes each",
-    ],
-    ["tone", "chat", "George’s encouragement", tones[s.tone].label],
-    [
-      "calendar",
-      "calendar",
-      "Calendar connection",
-      s.googleCalendar
-        ? cal.phase === "ready" ? `Connected · ${esc(cal.email)}` : "Connected · Google Calendar"
-        : "Optional · not connected",
-    ],
-  ]
-    .map(
-      ([page, i, title, sub]) =>
-        `<button class="setting-row" data-action="settings-page" data-to="${page}">${icon(
-          i
-        )}<span><b>${title}</b><small>${sub}</small></span><span>›</span></button>`
-    )
-    .join(
-      ""
-    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>App shortcuts</b><small>Set up your iPhone reminder</small></span><span>›</span></button>
-    <button class="setting-row" data-action="reminders-setup">${icon("clock")}<span><b>Daily reminder</b><small>${reminderSummary()}</small></span><span>›</span></button>
-<button class="setting-row" data-action="share-app">
-  ${icon("send")}
-  <span>
-    <b>Share with Friends</b>
-    <small>Invite someone to try First Things</small>
-  </span>
-  <span>›</span>
-</button>
-<button class="setting-row" data-action="copy-app-link">
-  ${icon("check")}
-  <span>
-    <b>Copy Link</b>
-    <small>Copy the app link to send anywhere</small>
-  </span>
-  <span>›</span>
-</button>
-<p class="section-label" style="margin-top:27px">HOW IT WORKS</p><button class="setting-row" data-action="try-apps">${icon(
-    "phone"
-  )}<span><b>App access</b><small>What’s paused right now, and why</small></span><span>›</span></button><button class="setting-row" data-action="day-rules">${icon(
-    "clock"
-  )}<span><b>What happens at midnight?</b><small>Daily reset, repeats and unused breaks</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Phone sign-in doesn’t use a verification code.<br>Photo checks use AI (Claude) and photos are never saved online. Google Calendar is optional and read-only. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
-    "settings"
-  )}`;
+  const row = (action, image, title, subtitle, extra = "") =>
+    `<button class="setting-row" data-action="${action}" ${extra}>${icon(image)}<span><b>${title}</b><small>${subtitle}</small></span><span aria-hidden="true">›</span></button>`;
+  return `<section class="page settings-page"><h1>Settings</h1>
+    <div class="profile-card settings-profile"><span class="profile-circle">${s.profile.avatar
+      ? `<img src="${esc(s.profile.avatar)}" alt="Profile picture" class="profile-avatar">`
+      : esc(s.profile.name[0]?.toUpperCase() || "?")}</span>
+      <div class="profile-info"><b>${esc(s.profile.name)}</b><small>${esc(s.profile.phone)}</small></div>
+      <button class="text-link profile-edit" data-action="profile" aria-label="Edit profile">Edit profile</button>
+      <div class="profile-actions"><label class="text-link profile-upload"><input type="file" id="avatar-upload" accept="image/png,image/jpeg,image/webp" aria-label="${s.profile.avatar ? "Change profile photo" : "Add profile photo"}"><span>${s.profile.avatar ? "Change photo" : "Add photo"}</span></label>${s.profile.avatar ? '<button class="text-link profile-remove" data-action="remove-avatar">Remove photo</button>' : ""}</div>
+    </div>
+    <section class="settings-group" aria-labelledby="daily-settings"><h2 id="daily-settings">Your day</h2>
+      ${row("settings-page", "lock", "Restricted apps", s.selectedApps.length ? `${s.selectedApps.length} selected` : "None selected", 'data-to="apps"')}
+      ${row("settings-page", "leaf", "Earned breaks", `${s.requestedBreaks} preferred · 10 minutes each`, 'data-to="breaks"')}
+      ${row("settings-page", "chat", "George’s encouragement", esc(tones[s.tone].label), 'data-to="tone"')}
+    </section>
+    <section class="settings-group" aria-labelledby="connection-settings"><h2 id="connection-settings">Optional connections</h2>
+      ${row("settings-page", "calendar", "Google Calendar", s.googleCalendar ? cal.phase === "ready" ? `Connected · ${esc(cal.email)}` : "Connected" : "Not connected", 'data-to="calendar"')}
+      ${row("instagram-setup", "phone", "App shortcuts", "Set up your iPhone reminder")}
+      ${row("reminders-setup", "clock", "Daily reminder", reminderSummary())}
+    </section>
+    <details class="settings-help"><summary>Help & sharing</summary>
+      ${row("try-apps", "phone", "App access", "What’s paused right now, and why")}
+      ${row("day-rules", "clock", "Daily reset", "Repeats, unused breaks, and midnight")}
+      <button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span aria-hidden="true">›</span></button>
+      ${row("share-app", "send", "Share First Things", "Invite someone to try it")}
+      ${row("copy-app-link", "check", "Copy app link", "Paste the link anywhere")}
+      <p class="privacy-note">Tasks save on this device and sync when you’re online with the app open. Phone sign-in doesn’t use a verification code.<br>Photo checks use AI (Claude); photos are never saved online. Google Calendar is optional and read-only. App shortcuts redirect you here; they do not enforce an iOS app lock.</p>
+    </details>
+    <div class="settings-account">${row("switch-account", "back", "Switch account", "Sign in with another phone number")}</div>
+  </section>${navigation("settings")}`;
 }
 async function copyText(text) {
   try { await navigator.clipboard.writeText(text); return; } catch { /* Older browsers need selection. */ }
@@ -1200,7 +1169,7 @@ function remindersModal(message = "") {
       <label class="field"><span>Remind me at</span><input type="time" id="reminder-time" value="${esc(prefs.time)}" required></label>
       ${prefs.on ? btn("Save time", "reminders-enable") + btn("Turn off reminders", "reminders-disable", "secondary") : btn("Turn on reminders", "reminders-enable")}
       <p class="small muted">${prefs.on ? "Reminders are on for this phone." : "You’ll be asked to allow notifications."} Keep First Things open until All changes synced shows, so the reminder counts your latest tasks.</p>`;
-  openModal("A little reminder.", `${body}<p id="reminder-result" class="small" role="status">${esc(message)}</p>`);
+  openModal("Daily reminder", `${body}<p id="reminder-result" class="small" role="status">${esc(message)}</p>`);
 }
 async function remindersEnable() {
   const time = document.querySelector("#reminder-time")?.value;
@@ -1376,10 +1345,10 @@ function taskEditor(id = "", kind = "task") {
   };
   taskDraft = { id, kind };
   openModal(
-    id ? "A little adjustment." : "A little first thing.",
+    id ? "Edit task" : "New task",
     `<form data-form="task" novalidate><label class="field"><span>What do you want to do?</span><input name="title" value="${esc(
       t.title
-    )}" placeholder="Read, tidy up, call home…" maxlength="180" autofocus></label><p class="small muted">A title is enough. Make it yours.</p><div class="two-fields"><label class="field"><span>Minutes <em>optional</em></span><input name="duration" type="number" min="1" max="1440" placeholder="e.g. 15" value="${esc(
+    )}" placeholder="Read, tidy up, call home…" maxlength="180" autofocus></label><p class="small muted">Only the task name is required.</p><div class="two-fields"><label class="field"><span>Minutes <em>optional</em></span><input name="duration" type="number" min="1" max="1440" placeholder="e.g. 15" value="${esc(
       t.duration
     )}"></label><label class="field"><span>Repeat</span><select name="recurrence">${[
       ["none", "Doesn’t repeat"],
@@ -1437,7 +1406,7 @@ function goalEditor(id = "") {
   };
   goalDraft = { id };
   openModal(
-    id ? "Keep your goal in view." : "What’s your bigger why?",
+    id ? "Edit goal" : "New goal",
     `<form data-form="goal" novalidate><label class="field"><span>Your goal</span><textarea name="title" maxlength="180">${esc(
       g.title
     )}</textarea></label><label class="field"><span>Target date</span><input type="date" min="${localDay()}" name="target" value="${
@@ -1449,26 +1418,22 @@ function goalEditor(id = "") {
     }</form>`
   );
 }
+function waveGeorge() {
+  const card = root.querySelector(".progress-card");
+  if (!card) return;
+  card.insertAdjacentHTML("beforeend", `<svg class="george-wave" viewBox="0 0 160 180" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="George waves"><path d="M98 39c1 14-7 24-20 24S56 53 57 39s8-23 21-23 21 10 20 23ZM77 64 76 117M76 79 51 98 36 86M76 117 55 158M76 117 99 157"/><path d="m69 37 .2 1m17-1 .2 1M70 46q8 8 16-1"/><g class="george-wave-arm"><path d="M77 79 103 92 122 66m-2-1 1-8m2 9 6-5"/></g></svg>`);
+  const george = card.querySelector(".george-wave");
+  setTimeout(() => george?.remove(), 1600);
+}
 function completion(t, earned = [], support = false, note = "") {
   render();
-  const prefix =
-    s.tone === "gentle"
-      ? "That’s a lovely little step."
-      : s.tone === "direct"
-      ? "Done. Nice follow-through."
-      : "A little win looks good on you!";
-  toast(
-    `${note || prefix} “${t.title}” is complete.${
-      earned.length ? " You earned a 10-minute break!" : ""
-    }`
-  );
-  if (!stats(s).remaining) {
-    if (support)
-      celebrate(
-        "The photo checks weren’t cooperating. I trust your effort — your task is complete."
-      );
-    else celebrate();
-  } else if (support)
+  if (s.tasks.length && s.tasks.every(task => task.done)) waveGeorge();
+  const check = [...root.querySelectorAll(".task-check")].find(button => button.dataset.id === t.id);
+  check?.classList.add("just-completed");
+  if (earned.length && stats(s).remaining) toast("10-minute break earned.");
+  else if (note) toast(note);
+  else if (support) toast("Photo check unavailable. Task marked complete.");
+  if (support && stats(s).remaining)
     openModal(
       "I trust your effort.",
       `${bubble(
@@ -1482,7 +1447,7 @@ function celebrate(extra = "") {
   const st = stats(s);
   openModal(
     "First things, done.",
-    `<div class="celebration-art"><img src="george.png" alt="George celebrating"></div><p class="celebration-text">${
+    `<div class="celebration-art"><img src="george-stick.svg" alt="George celebrating"></div><p class="celebration-text">${
       s.tone === "direct"
         ? "You followed through. Enjoy the time you earned."
         : s.tone === "gentle"
@@ -1502,7 +1467,7 @@ function photoDialog(id) {
   photoTask = id;
   const t = s.tasks.find((t) => t.id === id);
   openModal(
-    "Show your little win.",
+    "Verify task",
     `<p class="small muted">${esc(t.title)}</p><div class="photo-preview">${
       photo
         ? `<img src="${photo.preview}" alt="Your photo for this task">`
@@ -1587,7 +1552,7 @@ function tryApps() {
 function breakDetail() {
   const st = stats(s);
   openModal(
-    st.active ? "Enjoy your breather." : "A break, on your terms.",
+    st.active ? "Break in progress" : "Your breaks",
     `<div class="break-display">${icon("leaf")}<strong>${
       st.active ? "<span data-countdown></span>" : st.banked
     }</strong><span>${
@@ -1625,7 +1590,7 @@ function completeOnboarding(approve) {
   s.onboarded = true;
   rememberLogin();
   go("home");
-  toast("Your day, your way. Let’s start small.");
+  toast("Task list ready.");
 }
 document.addEventListener("click", async (e) => {
   const el = e.target.closest("[data-action]");
@@ -1644,7 +1609,7 @@ document.addEventListener("click", async (e) => {
 
   try {
     await navigator.clipboard.writeText(shareUrl);
-    toast("Link copied! Send it to a friend.");
+    toast("Link copied.");
   } catch {
     toast("Couldn't copy the link.");
   }
@@ -1668,7 +1633,7 @@ document.addEventListener("click", async (e) => {
   } else {
     try {
       await navigator.clipboard.writeText(shareUrl);
-      toast("App link copied! Send it to a friend.");
+      toast("Link copied.");
     } catch {
       toast("Couldn't copy the link.");
     }
@@ -1683,7 +1648,7 @@ document.addEventListener("click", async (e) => {
       go(el.dataset.to);
       break;
     case "back": {
-      if (!s.onboarded && s.screen === "tone") { signOut(); break; }
+      if (!s.onboarded && s.screen === "firstTask") { signOut(); break; }
       if (s.onboarded) {
         go("settings");
         break;
@@ -1704,6 +1669,10 @@ document.addEventListener("click", async (e) => {
     }
     case "edit-number":
       go("welcome");
+      break;
+    case "dismiss-tip":
+      s.tutorial = true;
+      render();
       break;
     case "tone":
       s.tone = v;
@@ -1826,7 +1795,7 @@ document.addEventListener("click", async (e) => {
       removeTask(s, id);
       closeModal();
       render();
-      toast("Task removed. Your progress and app access are up to date.");
+      toast("Task removed.");
       break;
     case "toggle-task": {
       const t = s.tasks.find((t) => t.id === id);
@@ -1837,9 +1806,7 @@ document.addEventListener("click", async (e) => {
         if (owner && owner.stepsDone > 0) owner.stepsDone--;
         reconcile(s);
         render();
-        toast(
-          "“" + t.title + "” is back on your list. Earned breaks are kept."
-        );
+
       } else if (t.photo) {
         photo = null;
         photoError = "";
@@ -1870,11 +1837,18 @@ document.addEventListener("click", async (e) => {
       deleteGoal(s, id);
       closeModal();
       render();
-      toast("Goal removed. Its daily tasks are still yours.");
+      toast("Goal removed. Tasks kept.");
       break;
     case "settings-page":
       if (modal.open) closeModal();
       go(el.dataset.to);
+      break;
+    case "switch-account":
+      closeModal();
+      go("switchAccount");
+      break;
+    case "cancel-switch-account":
+      go("settings");
       break;
     case "sign-out":
       signOut();
@@ -1911,7 +1885,7 @@ document.addEventListener("click", async (e) => {
     }
     case "profile":
       openModal(
-        "A little about you.",
+        "Edit profile",
         `<form data-form="profile" novalidate><label class="field"><span>Name</span><input name="name" value="${esc(
           s.profile.name
         )}" maxlength="40"></label><label class="field"><span>Phone number</span><input type="tel" name="phone" value="${esc(
@@ -2119,7 +2093,11 @@ document.addEventListener("submit", async (e) => {
       try { phone = normalizePhone(values.phone); }
       catch (problem) { fail(problem.message); break; }
       error = "";
-      try { await accounts.refreshRetired(phone); activateAccount(phone, values.name.trim()); }
+      try {
+        await accounts.refreshRetired(phone);
+        if (activePhone) persistAccount();
+        activateAccount(phone, values.name.trim());
+      }
       catch (problem) { fail(problem.message); break; }
       render();
       syncAccounts();
@@ -2136,11 +2114,23 @@ document.addEventListener("submit", async (e) => {
         );
       break;
     }
+    case "first-task": {
+      s.firstTaskDraft = values.title;
+      if (!values.title.trim()) { fail("Enter a task name."); break; }
+      addTask(s, { title: values.title });
+      delete s.firstTaskDraft;
+      s.suggestions = [];
+      s.onboarded = true;
+      s.tutorial = false;
+      rememberLogin();
+      go("home");
+      break;
+    }
     case "first-goal": {
       s.goalDraftTitle = values.title;
       s.goalDraftTarget = values.target;
       if (!values.title.trim()) {
-        fail("Give your bigger goal a name. It can be simple.");
+        fail("Enter a goal name.");
         break;
       }
       if (!values.target) {
@@ -2162,7 +2152,7 @@ document.addEventListener("submit", async (e) => {
     case "task": {
       const data = { ...values, photo: f.has("photo"), reminder: f.has("reminder") };
       if (!data.title.trim()) {
-        fail("Give your task a name. A few words are enough.");
+        fail("Enter a task name.");
         break;
       }
       if (
@@ -2188,7 +2178,6 @@ document.addEventListener("submit", async (e) => {
           taskDraft.id ? editTask(s, taskDraft.id, data) : addTask(s, data);
           closeModal();
           render();
-          toast("“" + data.title.trim() + "” saved to today.");
         } catch (err) {
           fail(err.message);
         }
@@ -2217,7 +2206,7 @@ document.addEventListener("submit", async (e) => {
         });
       closeModal();
       render();
-      toast("Your bigger goal is saved.");
+      toast("Goal saved.");
       break;
     }
     case "profile": {

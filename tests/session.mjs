@@ -37,7 +37,7 @@ assert.equal(storage.getItem(SESSION_KEY).includes('Must disappear'), false);
 // A verified user midway through onboarding skips phone verification on reload.
 s.onboarded = false;
 saveLogin(s, storage);
-assert.equal(restoreLogin(initial(), storage).screen, 'tone');
+assert.equal(restoreLogin(initial(), storage).screen, 'firstTask');
 // Restart removes remembered login, while leaving unrelated storage untouched.
 values.set('unrelated-app', 'keep');
 saveLogin(initial(), storage);

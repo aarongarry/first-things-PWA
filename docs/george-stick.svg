@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 180" fill="none" stroke="#45413b" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="George, a smiling stick figure">
+  <path d="M98 39c1 14-7 24-20 24S56 53 57 39s8-23 21-23 21 10 20 23Z"/>
+  <path d="M77 64 76 117M76 79 51 98 36 86M77 79 103 92 122 66M76 117 55 158M76 117 99 157"/>
+  <path d="m69 37 .2 1m17-1 .2 1M70 46q8 8 16-1"/>
+  <path d="m120 65 1-8m2 9 6-5" stroke-width="2"/>
+  <path d="M60 28q-8 17 3 28M80 67l-1 47M59 151l-3 8M98 149l4 9" stroke="#787168" stroke-width=".8" opacity=".45"/>
+</svg>

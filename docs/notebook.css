@@ -650,12 +650,6 @@ nav button { font-size: 14px; }
 .progress-detail { font-size: 14px; }
 .progress-card .progress-line { height: 6px; margin-top: 6px; }
 
-/* ---------- one font, everything hand drawn ---------- */
-*, *::before, *::after {
-  font-family: var(--hand) !important;
-  font-weight: 400 !important;
-  font-synthesis: none;
-}
 :root {
   --wob: 14px 4px 12px 5px / 5px 12px 4px 14px;
   --wob2: 5px 13px 6px 12px / 12px 5px 13px 6px;
@@ -706,4 +700,81 @@ nav { border-top: 0; background-image: var(--squiggle); background-repeat: repea
 .phone::before {
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='26' viewBox='0 0 16 26'%3E%3Cpath d='M-16.00 3.00 L-14.56 3.09 L-13.13 3.34 L-11.75 3.76 L-10.42 4.34 L-9.16 5.07 L-7.99 5.93 L-6.92 6.91 L-5.97 8.00 L-5.15 9.17 L-4.46 10.41 L-3.91 11.69 L-3.50 13.00 L-3.24 14.31 L-3.12 15.59 L-3.15 16.83 L-3.31 18.00 L-3.59 19.09 L-3.99 20.07 L-4.49 20.93 L-5.08 21.66 L-5.75 22.24 L-6.47 22.66 L-7.22 22.91 L-8.00 23.00 L-8.78 22.91 L-9.53 22.66 L-10.25 22.24 L-10.92 21.66 L-11.51 20.93 L-12.01 20.07 L-12.41 19.09 L-12.69 18.00 L-12.85 16.83 L-12.88 15.59 L-12.76 14.31 L-12.50 13.00 L-12.09 11.69 L-11.54 10.41 L-10.85 9.17 L-10.03 8.00 L-9.08 6.91 L-8.01 5.93 L-6.84 5.07 L-5.58 4.34 L-4.25 3.76 L-2.87 3.34 L-1.44 3.09 L0.00 3.00 L1.44 3.09 L2.87 3.34 L4.25 3.76 L5.58 4.34 L6.84 5.07 L8.01 5.93 L9.08 6.91 L10.03 8.00 L10.85 9.17 L11.54 10.41 L12.09 11.69 L12.50 13.00 L12.76 14.31 L12.88 15.59 L12.85 16.83 L12.69 18.00 L12.41 19.09 L12.01 20.07 L11.51 20.93 L10.92 21.66 L10.25 22.24 L9.53 22.66 L8.78 22.91 L8.00 23.00 L7.22 22.91 L6.47 22.66 L5.75 22.24 L5.08 21.66 L4.49 20.93 L3.99 20.07 L3.59 19.09 L3.31 18.00 L3.15 16.83 L3.12 15.59 L3.24 14.31 L3.50 13.00 L3.91 11.69 L4.46 10.41 L5.15 9.17 L5.97 8.00 L6.92 6.91 L7.99 5.93 L9.16 5.07 L10.42 4.34 L11.75 3.76 L13.13 3.34 L14.56 3.09 L16.00 3.00 L17.44 3.09 L18.87 3.34 L20.25 3.76 L21.58 4.34 L22.84 5.07 L24.01 5.93 L25.08 6.91 L26.03 8.00 L26.85 9.17 L27.54 10.41 L28.09 11.69 L28.50 13.00 L28.76 14.31 L28.88 15.59 L28.85 16.83 L28.69 18.00 L28.41 19.09 L28.01 20.07 L27.51 20.93 L26.92 21.66 L26.25 22.24 L25.53 22.66 L24.78 22.91 L24.00 23.00 L23.22 22.91 L22.47 22.66 L21.75 22.24 L21.08 21.66 L20.49 20.93 L19.99 20.07 L19.59 19.09 L19.31 18.00 L19.15 16.83 L19.12 15.59 L19.24 14.31 L19.50 13.00 L19.91 11.69 L20.46 10.41 L21.15 9.17 L21.97 8.00 L22.92 6.91 L23.99 5.93 L25.16 5.07 L26.42 4.34 L27.75 3.76 L29.13 3.34 L30.56 3.09 L32.00 3.00' fill='none' stroke='%2325252a' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 0 0 / 16px 26px repeat-x, linear-gradient(#ece8dd, #fbf9f4);
   border-bottom: 0;
+}
+
+/* Brief, dismissible guidance beside the real task list. */
+.george-tip { margin: 12px 0 20px; }
+.george-tip .george-bubble { margin-bottom: 4px; }
+.george-tip > button { display: block; margin-left: auto; }
+.george-tip .avatar { object-fit: contain; }
+
+/* Profile controls wrap independently of the account name and phone number. */
+.settings-profile { display: grid; grid-template-columns: 50px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 18px 0 24px; }
+.settings-profile .profile-info { min-width: 0; overflow-wrap: anywhere; }
+.settings-profile .profile-circle { flex-shrink: 0; }
+.settings-profile .profile-edit { min-height: 44px; white-space: nowrap; }
+.settings-profile .profile-actions { grid-column: 2 / -1; display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; }
+.profile-actions .text-link { position: relative; display: inline-flex; align-items: center; min-height: 44px; margin: 0; font-size: 16px; cursor: pointer; }
+.profile-actions .profile-upload input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.profile-actions .profile-upload:focus-within { outline: 2px solid var(--ink); outline-offset: 3px; }
+.settings-group { margin: 0 0 24px; }
+.settings-group h2 { font-size: 20px; margin: 0 0 6px; color: var(--ink); letter-spacing: 0; }
+.settings-page .setting-row { min-height: 72px; gap: 12px; padding-top: 14px; text-align: left; }
+.settings-page .setting-row > span:first-of-type { min-width: 0; overflow-wrap: anywhere; }
+.settings-page .setting-row > svg { color: var(--ink-soft); }
+.settings-page .setting-row b { font-size: 18px; }
+.settings-page .setting-row small { font-size: 15px; margin-top: 3px; }
+.settings-help { margin: 0 0 20px; }
+.settings-help > summary { cursor: pointer; min-height: 44px; font-size: 20px; padding: 8px 0; color: var(--ink); }
+.settings-help .privacy-note { text-align: left; margin: 16px 0; }
+.settings-account { margin-top: 4px; }
+@media (max-width: 340px) {
+  .settings-profile { grid-template-columns: 44px minmax(0, 1fr); }
+  .settings-profile .profile-circle { width: 44px; height: 44px; }
+  .settings-profile .profile-edit { grid-column: 2; justify-self: start; }
+}
+
+.settings-profile .profile-info b { font-size: 18px; }
+.settings-profile .profile-info small { font-size: 15px; }
+
+/* George reacts once to finishing the list, without adding a panel. */
+.progress-card { position: relative; }
+.george-wave { position: absolute; right: 10px; top: 4px; width: 44px; height: 54px; color: var(--ink); pointer-events: none; animation: george-appear 1.6s ease both; }
+.george-wave-arm { transform-origin: 77px 79px; animation: george-wave .32s ease-in-out 4 alternate; }
+@keyframes george-wave { from { transform: rotate(-8deg); } to { transform: rotate(-35deg); } }
+@keyframes george-appear { 0% { opacity: 0; } 12%, 80% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .george-wave, .george-wave-arm { animation: none; }
+}
+
+/* Plain text for daily use; handwriting stays in titles and drawings. */
+:root { --text: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+body, button, input, select, textarea, dialog, .app-content { font-family: var(--text); }
+body { font-size: 15px; }
+.page h1, .page h2, .page h3, .wordmark, .desktop-brand strong { font-family: var(--hand); }
+.section-label, .overline, .overline-dark, .field-label, .eyebrow { font-family: var(--text); font-size: 11px; letter-spacing: .7px; }
+.body-copy { font-size: 15px; }
+.task-card b, .task-title b { font-family: var(--text); font-size: 16px; font-weight: 500; line-height: 1.45; }
+.task-card small, .task-title small, .small, small { font-size: 13px; line-height: 1.5; }
+.task-title small:empty { display: none; }
+.task-card.completed .task-title b { color: var(--ink-soft); }
+.progress-detail { font-size: 12px; }
+.button, .add-task { font-size: 15px; font-weight: 500; }
+.field > span, .field-label, .profile-actions .text-link { font-size: 14px; }
+.settings-page .setting-row b { font-family: var(--text); font-size: 15px; font-weight: 500; }
+.settings-page .setting-row small { font-size: 13px; }
+.settings-profile .profile-info b { font-size: 16px; font-weight: 500; }
+.settings-profile .profile-info small { font-size: 13px; }
+.settings-profile .profile-edit { font-size: 13px; }
+.settings-help > summary { font-family: var(--text); font-size: 15px; }
+.bubble { font-size: 14px; }
+.toast { font-family: var(--text); font-size: 13px; }
+/* A drawn check replaces the static stamp. Only the tapped task animates. */
+.task-check { display: inline-grid; place-items: center; }
+.task-check[aria-checked="true"] { background: transparent; color: var(--ink); }
+.task-checkmark { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.task-check.just-completed .task-checkmark path { stroke-dasharray: 26; animation: pencil-check 220ms ease-out both; }
+@keyframes pencil-check { from { stroke-dashoffset: 26; } to { stroke-dashoffset: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .task-check.just-completed .task-checkmark path { animation: none; }
 }
