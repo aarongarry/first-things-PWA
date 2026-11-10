@@ -62,34 +62,19 @@ let storageFailed = false;
 // Progress report: Key Results are calculated by the database (first_things_okrs)
 // from everyone's real activity. Nothing on that screen is hard-coded.
 let okr = { phase: "idle", data: null, message: "", requestId: 0 };
-// The sync status stays out of the way when all is well: routine messages ("Saved on this
-// device", "Syncing…", "All changes synced") float over the top as a small pill and fade
-// away. Anything that needs attention (offline, errors, a changed phone number, a
-// storage problem) stays as a banner until it is fixed. Add ?status=on to the address to
-// keep the banner visible all the time, for example during a demo.
-const alwaysShowStatus = new URL(location.href).searchParams.get("status") === "on";
-let statusFadeTimer;
+// Routine saving and syncing stay silent. Only actionable failures use a banner.
 function databaseStatus(phase, message = "") {
   const element = document.querySelector("#database-status");
+  element.dataset.phase = phase;
+  element.hidden = !["error", "storage", "moved"].includes(phase);
+  element.classList.remove("floating", "faded");
+  element.replaceChildren();
+  if (element.hidden) return;
   const labels = {
-    welcome: "Sign in to sync your tasks.",
-    local: "Saved on this device",
-    offline: "Offline · Saved on this device. Syncs when you reconnect.",
-    syncing: "Saved on this device · Syncing…",
-    saved: "All changes synced",
-    error: message || "Saved on this device · Cloud sync will retry.",
+    error: message || "Couldn’t sync. Your tasks are saved on this device.",
     storage: "Couldn’t save on this device. Keep this app open and free some storage.",
   };
   element.textContent = labels[phase] || message;
-  element.dataset.phase = phase;
-  const routine = ["local", "syncing", "saved"].includes(phase) && !alwaysShowStatus;
-  element.classList.toggle("floating", routine);
-  element.classList.remove("faded");
-  clearTimeout(statusFadeTimer);
-  // "Syncing…" stays until the sync finishes; the other two fade after a moment.
-  if (routine && phase !== "syncing") {
-    statusFadeTimer = setTimeout(() => element.classList.add("faded"), 2500);
-  }
   if (phase === "moved") {
     root.inert = true;
     const button = document.createElement("button");

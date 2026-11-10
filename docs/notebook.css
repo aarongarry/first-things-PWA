@@ -696,10 +696,12 @@ nav { border-top: 0; background-image: var(--squiggle); background-repeat: repea
 /* a hand-drawn underline under the section title */
 .task-heading h2, .page > h1 { display: inline-block; }
 
-/* in-app binding: one continuous hand-drawn loop, matching the home screen icon */
+/* Clean vector loops avoid raster blur in the notebook binding. */
 .phone::before {
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='26' viewBox='0 0 16 26'%3E%3Cpath d='M-16.00 3.00 L-14.56 3.09 L-13.13 3.34 L-11.75 3.76 L-10.42 4.34 L-9.16 5.07 L-7.99 5.93 L-6.92 6.91 L-5.97 8.00 L-5.15 9.17 L-4.46 10.41 L-3.91 11.69 L-3.50 13.00 L-3.24 14.31 L-3.12 15.59 L-3.15 16.83 L-3.31 18.00 L-3.59 19.09 L-3.99 20.07 L-4.49 20.93 L-5.08 21.66 L-5.75 22.24 L-6.47 22.66 L-7.22 22.91 L-8.00 23.00 L-8.78 22.91 L-9.53 22.66 L-10.25 22.24 L-10.92 21.66 L-11.51 20.93 L-12.01 20.07 L-12.41 19.09 L-12.69 18.00 L-12.85 16.83 L-12.88 15.59 L-12.76 14.31 L-12.50 13.00 L-12.09 11.69 L-11.54 10.41 L-10.85 9.17 L-10.03 8.00 L-9.08 6.91 L-8.01 5.93 L-6.84 5.07 L-5.58 4.34 L-4.25 3.76 L-2.87 3.34 L-1.44 3.09 L0.00 3.00 L1.44 3.09 L2.87 3.34 L4.25 3.76 L5.58 4.34 L6.84 5.07 L8.01 5.93 L9.08 6.91 L10.03 8.00 L10.85 9.17 L11.54 10.41 L12.09 11.69 L12.50 13.00 L12.76 14.31 L12.88 15.59 L12.85 16.83 L12.69 18.00 L12.41 19.09 L12.01 20.07 L11.51 20.93 L10.92 21.66 L10.25 22.24 L9.53 22.66 L8.78 22.91 L8.00 23.00 L7.22 22.91 L6.47 22.66 L5.75 22.24 L5.08 21.66 L4.49 20.93 L3.99 20.07 L3.59 19.09 L3.31 18.00 L3.15 16.83 L3.12 15.59 L3.24 14.31 L3.50 13.00 L3.91 11.69 L4.46 10.41 L5.15 9.17 L5.97 8.00 L6.92 6.91 L7.99 5.93 L9.16 5.07 L10.42 4.34 L11.75 3.76 L13.13 3.34 L14.56 3.09 L16.00 3.00 L17.44 3.09 L18.87 3.34 L20.25 3.76 L21.58 4.34 L22.84 5.07 L24.01 5.93 L25.08 6.91 L26.03 8.00 L26.85 9.17 L27.54 10.41 L28.09 11.69 L28.50 13.00 L28.76 14.31 L28.88 15.59 L28.85 16.83 L28.69 18.00 L28.41 19.09 L28.01 20.07 L27.51 20.93 L26.92 21.66 L26.25 22.24 L25.53 22.66 L24.78 22.91 L24.00 23.00 L23.22 22.91 L22.47 22.66 L21.75 22.24 L21.08 21.66 L20.49 20.93 L19.99 20.07 L19.59 19.09 L19.31 18.00 L19.15 16.83 L19.12 15.59 L19.24 14.31 L19.50 13.00 L19.91 11.69 L20.46 10.41 L21.15 9.17 L21.97 8.00 L22.92 6.91 L23.99 5.93 L25.16 5.07 L26.42 4.34 L27.75 3.76 L29.13 3.34 L30.56 3.09 L32.00 3.00' fill='none' stroke='%2325252a' stroke-width='2.1' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 0 0 / 16px 26px repeat-x, linear-gradient(#ece8dd, #fbf9f4);
-  border-bottom: 0;
+  height: 30px;
+  background: var(--paper-2) url("notebook-binding.svg") left top / 24px 30px repeat-x;
+  border: 0;
+  filter: none;
 }
 
 /* Brief, dismissible guidance beside the real task list. */
@@ -778,3 +780,17 @@ body { font-size: 15px; }
 @media (prefers-reduced-motion: reduce) {
   .task-check.just-completed .task-checkmark path { animation: none; }
 }
+
+/* No routine save/sync notices, including the initial page load. */
+.database-status[hidden] { display: none !important; }
+@media (max-width: 650px), (display-mode: standalone) {
+  html, body { height: 100%; overflow: hidden; background: var(--paper); }
+  .workspace { width: 100%; max-width: none; height: 100vh; height: 100dvh; min-height: 0; padding: 0; margin: 0; }
+  .phone { width: 100%; max-width: none; height: 100%; min-height: 0; margin: 0; border: 0; border-radius: 0; box-shadow: none; padding-top: calc(env(safe-area-inset-top, 0px) + 30px); padding-bottom: 0; }
+  .phone::before { top: env(safe-area-inset-top, 0px); }
+  .app-content > .page { padding-bottom: calc(92px + env(safe-area-inset-bottom, 0px)); }
+  .nav { position: fixed; inset: auto 0 0; width: 100%; margin: 0; padding: 10px 8px calc(8px + env(safe-area-inset-bottom, 0px)); min-height: calc(66px + env(safe-area-inset-bottom, 0px)); background-color: var(--paper); z-index: 20; }
+}
+/* Avatar buttons have no default browser padding around their photo. */
+.profile-circle { position: relative; padding: 0; aspect-ratio: 1; border-radius: 50% !important; }
+.profile-circle .profile-avatar { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; border-radius: inherit; }

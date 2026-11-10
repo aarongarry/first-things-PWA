@@ -1,13 +1,13 @@
 // Bump on every release that changes a shell asset. One version = one full shell.
-const CACHE = 'first-things-shell-v32';
+const CACHE = 'first-things-shell-v34';
 const ASSETS = [
   './', './index.html', './styles.css', './notebook.css', './app.js', './model.js', './session.js',
   './shortcut.js', './calendar.js', './photo.js', './offline.js', './cloud.js', './supabase-config.js', './pwa.js', './reminders.js',
-  './george-stick.svg', './manifest.webmanifest', './icons/icon-192.png',
+  './george-stick.svg', './notebook-binding.svg', './manifest.webmanifest', './icons/icon-192.png',
   './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/icon.svg',
 ];
 self.addEventListener('install', event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS.map(path => new Request(path, { cache: 'reload' })))));
 });
 self.addEventListener('activate', event => {
   event.waitUntil((async () => {
