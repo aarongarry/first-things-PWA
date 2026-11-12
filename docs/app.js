@@ -62,33 +62,20 @@ let okr = { phase: "idle", data: null, message: "", requestId: 0 };
 // away. Anything that needs attention (offline, errors, a changed phone number, a
 // storage problem) stays as a banner until it is fixed. Add ?status=on to the address to
 // keep the banner visible all the time, for example during a demo.
-const alwaysShowStatus = new URL(location.href).searchParams.get("status") === "on";
-let statusFadeTimer;
 function databaseStatus(phase, message = "") {
   const element = document.querySelector("#database-status");
+  element.dataset.phase = phase;
+  element.hidden = !["error", "storage", "moved"].includes(phase);
+  element.classList.remove("floating", "faded");
+  element.replaceChildren();
+  if (element.hidden) return;
   const labels = {
-    welcome: "Your day, on any device.",
-    local: "Saved on this device",
-    offline: "Offline · Saved on this device. Syncs when you reconnect.",
-    syncing: "Saved on this device · Syncing…",
-    saved: "All changes synced",
-    error: message || "Saved on this device · Cloud sync will retry.",
+    error: message || "Couldn’t sync. Your tasks are saved on this device.",
     storage: "Couldn’t save on this device. Keep this app open and free some storage.",
   };
   element.textContent = labels[phase] || message;
-  element.dataset.phase = phase;
-  const routine = ["local", "syncing", "saved"].includes(phase) && !alwaysShowStatus;
-  element.classList.toggle("floating", routine);
-  element.classList.remove("faded");
-  clearTimeout(statusFadeTimer);
-  // "Syncing…" stays until the sync finishes; the other two fade after a moment.
-  if (routine && phase !== "syncing") {
-    statusFadeTimer = setTimeout(() => element.classList.add("faded"), 2500);
-  }
   if (phase === "moved") {
     root.inert = true;
-    const navSlot = document.querySelector("#nav-slot");
-    if (navSlot) navSlot.inert = true;
     const button = document.createElement("button");
     button.textContent = "Sign out";
     button.addEventListener("click", signOut);
@@ -211,6 +198,7 @@ function activateAccount(phone, name = "") {
   const seed = initial();
   seed.profile = { phone, name: name || "Friend" };
   seed.loginVerified = true;
+  seed.selectedApps = [];
   s = seed;
   try {
     applySnapshot(s, accounts.open(phone, accountSnapshot(seed)).local);
@@ -280,7 +268,7 @@ const icon = (name) =>
   }</svg>`;
 const btn = (text, action, cls = "", attrs = "") =>
   `<button class="button ${cls}" data-action="${action}" ${attrs}>${text}</button>`;
-const avatar = () => '<img class="avatar" src="george-face.png" alt="George">';
+const avatar = () => '<img class="avatar" src="george-stick.svg" alt="George">';
 const bubble = (text) =>
   `<div class="george-bubble">${avatar()}<div class="bubble"><strong>GEORGE</strong>${text}</div></div>`;
 const tones = {
@@ -455,11 +443,13 @@ function navigation(active) {
     .join("")}</nav>`;
 }
 function render() {
+  const previousProgress = root.querySelector(".progress-line")?.getAttribute("aria-valuenow");
 
   rollover(s);
   reconcile(s);
   const map = {
     welcome: welcome,
+    switchAccount: () => welcome(true),
     tone: tone,
     firstTask: firstTask,
     firstGoal: firstGoal,
@@ -477,6 +467,15 @@ function render() {
   };
   // Older saved setup screens (the George quiz, practice task) now land on the first-task step.
   root.innerHTML = (map[s.screen] || (activePhone && !s.onboarded ? firstTask : home))();
+  const progressBar = root.querySelector(".progress-line");
+  if (previousProgress !== undefined && previousProgress !== null && progressBar &&
+      !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    const next = progressBar.getAttribute("aria-valuenow");
+    if (next !== previousProgress) progressBar.querySelector("i")?.animate(
+      [{ width: `${previousProgress}%` }, { width: `${next}%` }],
+      { duration: 280, easing: "ease-out" }
+    );
+  }
   // Keep the bottom tab bar outside the scrolling area so it never moves.
   const navSlot = document.querySelector("#nav-slot");
   if (navSlot) {
@@ -497,7 +496,7 @@ function render() {
 // Every screen change is saved as a browser history entry, so the phone's Back
 // gesture/button returns to the previous screen instead of leaving the app.
 const ONBOARDING_SCREENS = ["welcome", "firstTask", "firstGoal", "calendar", "apps", "breaks"];
-const MAIN_SCREENS = ["home", "goals", "progress", "chat", "settings", "locked", "lockscreen", "completed"];
+const MAIN_SCREENS = ["home", "goals", "progress", "chat", "settings", "locked", "lockscreen", "completed", "switchAccount"];
 function syncHistory() {
   if (history.state?.ft === s.screen) return; // already recorded (also true right after Back)
   // Keep the hidden Progress route in the address; every other screen uses the plain address.
@@ -520,14 +519,14 @@ window.addEventListener("popstate", (event) => {
   root.scrollTop = 0;
   if (target === "progress") void refreshOkrs();
 });
-function welcome() {
-  return `<section class="page welcome"><div class="wordmark"><span class="brand-mark">✓</span>first things<span class="brand-period">.</span></div><div class="hero-art"><img src="george.png" alt="George, your friendly blue companion"><span class="hello">Hey, I’m George!</span></div><h1>First, your goals.<br><span>Then, your scroll.</span></h1><form data-form="signup" novalidate><label class="field"><span>Your name <small>(optional for returning users)</small></span><input name="name" value="${esc(
-    s.profile.name
+function welcome(switching = false) {
+  return `<section class="page welcome">${switching ? `<div class="step-top"><button class="back" data-action="cancel-switch-account">${icon("back")} Back</button></div>` : `<div class="wordmark"><span class="brand-mark">✓</span>first things<span class="brand-period">.</span></div><div class="hero-art"><img src="george-stick.svg" alt="George, your pencil-sketch guide"><span class="hello">Hey, I’m George!</span></div>`}<h1>${switching ? "Switch account" : "Sign in"}</h1><p class="body-copy">${switching ? "Sign in with a different phone number." : "Use your phone number to save and sync your tasks."}</p><form data-form="signup" novalidate><label class="field"><span>Your name <small>(optional for returning users)</small></span><input name="name" value="${esc(
+    switching ? "" : s.profile.name
   )}" placeholder="Your first name" autocomplete="given-name" maxlength="40"></label><label class="field"><span>Phone number</span><input type="tel" name="phone" value="${esc(
-    s.profile.phone
+    switching ? "" : s.profile.phone
   )}" placeholder="(555) 123-4567" autocomplete="tel"></label>${
     error ? `<div class="error" role="alert">${esc(error)}</div>` : ""
-  }<button class="button">Continue with phone number</button><p class="privacy-note">Use the same number to find your account.<br>Demo login: no code or text. Anyone with your number can open this demo account.</p></form><button class="button secondary install-button" data-install>Install First Things</button><p class="install-caption">Keep your day one tap away. Works offline.</p><button class="button ghost mobile-demo" data-action="demo">Demo controls</button></section>`;
+  }<button class="button">Continue with phone number</button><p class="privacy-note">Use the same number to find your account.<br>No code or text message. Anyone who knows your number can open your account, so keep private details out of it.</p></form>${switching ? '<button class="button ghost" data-action="sign-out">Sign out instead</button>' : '<button class="button secondary install-button" data-install>Install First Things</button><p class="install-caption">Works offline after installation.</p>'}</section>`;
 }
 function tone() {
   return step(
@@ -557,48 +556,16 @@ function tone() {
     btn(s.onboarded ? "Done" : "That sounds like me", "tone-next")
   );
 }
-// Setup step 1: a guided "make your first task" tutorial.
-const FIRST_TASK_EXAMPLES = ["Read 10 pages", "Go for a walk", "Tidy my desk"];
 function firstTask() {
-  const t = s.tasks[0];
-  if (!t)
-    return step(
-      "Let’s make your<br>first task.",
-      "Tasks are the small things on today’s list. Finish them to earn breaks.",
-      1,
-      `${bubble(
-        "Pick something small you can finish today. A few words is enough."
-      )}<form data-form="first-task" novalidate><label class="field"><span>What do you want to do today?</span><input name="title" placeholder="Read 10 pages" maxlength="180" autocomplete="off"></label><div class="chips">${FIRST_TASK_EXAMPLES.map(
-        (x) =>
-          `<button type="button" data-action="task-example" data-value="${esc(
-            x
-          )}">${esc(x)}</button>`
-      ).join(
-        ""
-      )}</div><label class="field"><span>Minutes <em>optional</em></span><input name="duration" type="number" min="1" max="1440" placeholder="e.g. 15"></label><div class="form-error" role="alert"></div><button class="button">Add to today</button></form>`,
-      btn("Skip for now", "first-task-next", "ghost")
-    );
-  return step(
-    "Nice! That’s your<br>first task.",
-    "It’s on today’s list, ready when you are.",
-    1,
-    `${bubble(
-      "When you finish it, tap the box on your Today screen. Every task you finish gets you closer to a break."
-    )}<div class="task-card practice"><span class="task-check"></span><span><b>${esc(
-      t.title
-    )}</b><small>${
-      t.duration ? esc(t.duration) + " min · " : ""
-    }Today</small></span></div><div class="success-note">✓ Added to today’s list.</div>${
-      s.tasks.length > 1
-        ? `<p class="small muted">${s.tasks.length} tasks on today’s list.</p>`
-        : ""
-    }`,
-    `${btn("Next: set a bigger goal", "first-task-next")}${btn(
-      "Add another task",
-      "new-task",
-      "ghost"
-    )}`
-  );
+  return `<section class="page"><div class="step-top"><button class="back" data-action="edit-number">${icon("back")} Back</button><span>ONE QUICK STEP</span></div><h1>Add your first task</h1><p class="body-copy">You can add more anytime.</p>${bubble("I’m George. Tap a task’s checkbox when it’s done.")}<form data-form="first-task" novalidate><label class="field"><span>Your first task</span><input name="title" placeholder="Review one page of notes" maxlength="180" value="${esc(s.firstTaskDraft || "")}" autofocus></label>${error ? `<div class="error" role="alert">${esc(error)}</div>` : ""}<button class="button">Add task & start my day</button></form><p class="small muted">Calendar, app shortcuts, and break preferences are available later in Settings.</p></section>`;
+}
+function georgeTip() {
+  if (s.tutorial) return "";
+  const finished = s.tasks.some(t => t.done);
+  const text = finished
+    ? 'Calendar, app shortcuts, and break preferences are in Settings.'
+    : 'Tap a checkbox to finish a task. Use + to add another.';
+  return `<aside class="george-tip" aria-label="Tip from George">${bubble(text)}<button class="text-link" data-action="dismiss-tip">${finished ? "Got it" : "Hide tips"}</button></aside>`;
 }
 function firstGoal() {
   const g = s.goals[0];
@@ -747,26 +714,27 @@ function home() {
   const name = s.profile.name || "friend";
   const done = s.tasks.filter((t) => t.done),
     todo = s.tasks.filter((t) => !t.done).sort((x, y) => urgencyRank(x) - urgencyRank(y)),
-    reminderNote = st.reminders ? ` · ${st.reminders} reminder${st.reminders === 1 ? "" : "s"}` : "";
-  return `<section class="page daily"><header class="daily-header"><div><span class="section-label">${today()}</span><h1>Your day, ${esc(
+    reminderNote = st.reminders ? ` · ${st.reminders} reminder${st.reminders === 1 ? "" : "s"}` : "",
+    recent = recentCompleted();
+  const allDone = s.tasks.length > 0 && todo.length === 0;
+  const progress = allDone ? 100 : st.percent;
+  return `<section class="page daily"><header class="daily-header"><div><span class="section-label">${today()}</span><h1>Today, ${esc(
     name
-  )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${profileFace()}</button></header><div class="progress-card"><div><span class="overline">YOUR FIRST THINGS</span><h2>${
-    st.total
+  )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${
+    s.profile.avatar
+      ? `<img src="${esc(s.profile.avatar)}" alt="" class="profile-avatar">`
+      : esc(name[0]?.toUpperCase())
+  }</button></header>${georgeTip()}<div class="progress-card"><div><span class="overline">TODAY’S PROGRESS</span><h2>${
+    allDone
+      ? "All done for today."
+      : st.total
       ? st.remaining === 0
-        ? "Look at you go."
-        : `${st.remaining} step${st.remaining === 1 ? "" : "s"} left.`
+        ? "Tasks done. Reminders left."
+        : `${st.remaining} task${st.remaining === 1 ? "" : "s"} left.`
       : s.tasks.length
       ? "Just reminders today."
-      : "A fresh start."
-  }</h2><span class="progress-detail">${st.done} of ${
-    st.total
-  } tasks complete${reminderNote}</span></div><div class="progress-ring" style="--progress:${
-    st.percent
-  }%"><span><b>${
-    st.percent
-  }<small>%</small></b><em>complete</em></span></div><div class="progress-line"><i style="width:${
-    st.percent
-  }%"></i></div></div><button class="access-strip ${
+      : "No tasks yet."
+  }</h2><span class="progress-detail">${allDone ? `${done.length} of ${s.tasks.length} complete · Enjoy your day.` : `${st.done} of ${st.total} tasks complete${reminderNote}`}</span></div><div class="progress-ring" style="--progress:${progress}%"><span><b>${progress}<small>%</small></b><em>complete</em></span></div><div class="progress-line" role="progressbar" aria-label="Today’s tasks" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><i style="width:${progress}%"></i></div></div>${s.selectedApps.length && st.remaining ? `<button class="access-strip ${
     st.blocked ? "" : "unlocked"
   }" data-action="try-apps">${icon(st.blocked ? "lock" : "unlock")}<span><b>${
     st.active
@@ -778,21 +746,21 @@ function home() {
       : "Your apps are unlocked"
   }</b><small>${
     st.active
-      ? "Time for yourself."
+      ? "10-minute break"
       : st.blocked
-      ? "Focus now. Freedom later."
+      ? "Finish your tasks or use an earned break"
       : st.remaining
       ? "Pick your apps in Settings."
       : "Until midnight, unless you add a task."
-  }</small></span><span>›</span></button><div class="break-card"><span class="break-icon">${icon(
+  }</small></span><span>›</span></button>` : ""}${st.remaining && (st.active || st.banked) ? `<div class="break-card"><span class="break-icon">${icon(
     "leaf"
   )}</span><div><b>${
     st.active
       ? "<span data-countdown></span> left"
       : st.banked
       ? `${st.banked} break${st.banked === 1 ? "" : "s"} waiting for you`
-      : "A breather is on the way"
-  }</b><small>${nextBreakText()}</small></div>${
+      : "No breaks available"
+  }</b><small>${st.active ? "Timer running" : "10 minutes each"}</small></div>${
     st.banked && st.remaining && !st.active
       ? '<button data-action="start-break">Start</button>'
       : `${
@@ -800,29 +768,25 @@ function home() {
         }<button data-action="break-detail" aria-label="Break details">${icon(
           "clock"
         )}</button>`
-  }</div><div class="task-heading"><h2>Today’s list <span>${
+  }</div>` : ""}<div class="task-heading"><h2>Today’s list <span>${
     s.tasks.length
   }</span></h2><button class="icon-btn blue" data-action="new-task" aria-label="Add a task">${icon(
     "plus"
   )}</button></div>${
     !s.tasks.length
-      ? `<div class="empty-state">${icon(
-          "lock"
-        )}<h3>Room for possibility.</h3><p>Add something you want to do today.<br>A few words are all you need.</p>${btn(
+      ? `<div class="empty-state"><h3>No tasks yet</h3><p>Add your first task for today.</p>${btn(
           "Add my first task",
           "new-task",
           "secondary"
         )}</div>`
-      : todo.length
-      ? todo.map(taskRow).join("")
-      : `<div class="completed-banner"><span>${icon("unlock")}</span><h3>First things, done.</h3><p>You made time for what matters.<br>Your apps are fully unlocked.</p><button class="text-link" data-action="celebrate">Enjoy this moment</button></div>`
+      : todo.map((t) => taskRow(t)).join("")
   }${
-    done.length || recentCompleted().length
-      ? `<button class="setting-row completed-link" data-action="nav" data-to="completed"><span><b>Completed tasks</b><small>${
-          done.length
-        } done today · ${recentCompleted().length} earlier this week</small></span><span>›</span></button>`
+    done.length || recent.length
+      ? `<button class="setting-row completed-link" data-action="nav" data-to="completed"><span><b>Completed tasks</b><small>${done.length} done today · ${recent.length} earlier this week</small></span><span>›</span></button>`
       : ""
-  }</section>${navigation(
+  }<button class="add-task" data-action="new-task">${icon(
+    "plus"
+  )} Add task</button></section>${navigation(
     "home"
   )}`;
 }
@@ -881,7 +845,7 @@ function taskRow(t) {
   }" aria-label="${t.done ? "Mark incomplete:" : "Complete:"} ${esc(
     t.title
   )}" role="checkbox" aria-checked="${t.done}">${
-    t.done ? "✓" : ""
+    t.done ? '<svg class="task-checkmark" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 5 6L20 5"/></svg>' : ""
   }</button><button class="task-title" data-action="edit-task" data-id="${
     t.id
   }"><b>${esc(t.title)}</b><small>${
@@ -895,7 +859,7 @@ function taskRow(t) {
     ]
       .filter(Boolean)
       .map(esc)
-      .join(" · ") || "Your own first thing"
+      .join(" · ")
   }</small></button>${
     t.photo && !t.done
       ? `<span class="photo-indicator">${icon("camera")}</span>`
@@ -1070,7 +1034,7 @@ function settings() {
   </span>
   <span>›</span>
 </button>
-<button class="setting-row" data-action="sign-out"><span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button></section>${navigation(
+<button class="setting-row" data-action="switch-account"><span><b>Switch account</b><small>Sign in with another phone number</small></span><span>›</span></button></section>${navigation(
     "settings"
   )}`;
 }
@@ -1089,12 +1053,12 @@ async function instagramSetup(appName = "Instagram") {
   openModal("A pause before Instagram.", '<p>Connecting your synced account…</p>');
   const version = modalVersion, phone = activePhone;
   try {
-    if (!USE_SUPABASE || !navigator.onLine || legacyPhone || storageFailed) throw Error("Connect to the internet and wait for All changes synced first.");
+    if (!USE_SUPABASE || !navigator.onLine || legacyPhone || storageFailed) throw Error("Connect to the internet and try again.");
     persistAccount();
     await accounts.sync(phone);
     const record = accounts.read(phone);
     if (!record?.linked || record.retired || record.pendingMove || JSON.stringify(record.local) !== JSON.stringify(record.base))
-      throw Error("Wait for All changes synced, then try again.");
+      throw Error("Open the app online, then try again.");
     const { access_key } = await createCloud().shortcut(phone);
     const config = shortcutConfig(access_key, Intl.DateTimeFormat().resolvedOptions().timeZone, location.href, appName);
     if (version !== modalVersion || phone !== activePhone) return;
@@ -1115,9 +1079,9 @@ async function instagramSetup(appName = "Instagram") {
       <li>In Shortcuts, add an automation with the <b>App</b> trigger. Depending on your Shortcuts layout, use Automation → + or add an automation trigger to a shortcut.</li>
       <li>Select <b>${esc(appName)}</b> and <b>Is Opened</b>, then choose <b>Run Immediately</b>.</li>
       <li>Choose <b>Check First Things</b> (or add <b>Run Shortcut</b> and select it). Save the automation.</li>
-      <li>In First Things → Restricted apps, select ${esc(appName)}. Add an unfinished task and wait for <b>All changes synced</b>. Open ${esc(appName)} to test the redirect.</li></ol></details>
+      <li>In First Things → Restricted apps, select ${esc(appName)}. Add an unfinished task. Open ${esc(appName)} to test the redirect.</li></ol></details>
       <details class="shortcut-guide"><summary>3. Copy your setup values</summary>${field("Check URL", "url")}${field("API key", "apiKey")}${field("Reminder URL", "reminder")}<p class="small muted">Time zone: ${esc(config.zone)}. If you travel to a different time zone, reopen this setup and replace the Check URL. Your link follows phone-number changes. Keep it private: it can read your ${esc(appName)} access status.</p></details>
-      <p class="small muted">Open First Things each morning and after edits; wait for All changes synced. Offline requests may stop with a Shortcuts error and leave ${esc(appName)} open. A break ending won’t close an app that’s already open. The reminder may open in Safari; your Home Screen app keeps its own session.</p><p class="small muted">Repeated opening can outrun iOS automations. Run Immediately and Go to Home Screen reduce the window, but Shortcuts cannot guarantee an app lock.</p>`);
+      <p class="small muted">Open First Things each morning and after edits to sync your tasks. Offline requests may stop with a Shortcuts error and leave ${esc(appName)} open. A break ending won’t close an app that’s already open. The reminder may open in Safari; your Home Screen app keeps its own session.</p><p class="small muted">Repeated opening can outrun iOS automations. Run Immediately and Go to Home Screen reduce the window, but Shortcuts cannot guarantee an app lock.</p>`);
   } catch (problem) {
     if (version === modalVersion && phone === activePhone) openModal("Let’s reconnect.", `<p>${esc(problem.message)}</p><button class="button" data-action="instagram-setup">Try again</button>`);
   }
@@ -1138,7 +1102,7 @@ function remindersModal(message = "") {
     body = `<p>A nudge on your phone when you still have first things to finish. One reminder a day, at the time you pick, and only if you have tasks left.</p>
       <label class="field"><span>Remind me at</span><input type="time" id="reminder-time" value="${esc(prefs.time)}" required></label>
       ${prefs.on ? btn("Save time", "reminders-enable") + btn("Turn off reminders", "reminders-disable", "secondary") : btn("Turn on reminders", "reminders-enable")}
-      <p class="small muted">${prefs.on ? "Reminders are on for this phone." : "You’ll be asked to allow notifications."} Keep First Things open until All changes synced shows, so the reminder counts your latest tasks.</p>`;
+      <p class="small muted">${prefs.on ? "Reminders are on for this phone." : "You’ll be asked to allow notifications."} Keep First Things open while online, so the reminder counts your latest tasks.</p>`;
   openModal("A quick reminder.", `${body}<p id="reminder-result" class="small" role="status">${esc(message)}</p>`);
 }
 async function remindersEnable() {
@@ -1151,11 +1115,11 @@ async function remindersEnable() {
     await enableReminders({
       cloud: createCloud(), phone, time,
       beforeSave: async () => {
-        if (!navigator.onLine || legacyPhone || storageFailed) throw Error("Connect to the internet and wait for All changes synced first.");
+        if (!navigator.onLine || legacyPhone || storageFailed) throw Error("Connect to the internet and try again.");
         persistAccount();
         await accounts.sync(phone);
         const record = accounts.read(phone);
-        if (!record?.linked || record.retired || record.pendingMove) throw Error("Wait for All changes synced, then try again.");
+        if (!record?.linked || record.retired || record.pendingMove) throw Error("Open the app online, then try again.");
       },
     });
     if (phone === activePhone) { render(); remindersModal(`Done. We’ll remind you at ${formatTime(time)} if you still have tasks left.`); }
@@ -1455,26 +1419,22 @@ function goalEditor(id = "") {
     }</form>`
   );
 }
-function completion(t, earned = [], support = false) {
+function waveGeorge() {
+  const card = root.querySelector(".progress-card");
+  if (!card) return;
+  card.insertAdjacentHTML("beforeend", `<svg class="george-wave" viewBox="0 0 160 180" fill="none" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="George waves"><path d="M98 39c1 14-7 24-20 24S56 53 57 39s8-23 21-23 21 10 20 23ZM77 64 76 117M76 79 51 98 36 86M76 117 55 158M76 117 99 157"/><path d="m69 37 .2 1m17-1 .2 1M70 46q8 8 16-1"/><g class="george-wave-arm"><path d="M77 79 103 92 122 66m-2-1 1-8m2 9 6-5"/></g></svg>`);
+  const george = card.querySelector(".george-wave");
+  setTimeout(() => george?.remove(), 1600);
+}
+function completion(t, earned = [], support = false, note = "") {
   render();
-  const prefix =
-    s.tone === "gentle"
-      ? "That’s a lovely step."
-      : s.tone === "direct"
-      ? "Done. Nice follow-through."
-      : "A win looks good on you!";
-  toast(
-    `${prefix} “${t.title}” is complete.${
-      earned.length ? " You earned a 10-minute break!" : ""
-    }`
-  );
-  if (!stats(s).remaining) {
-    if (support)
-      celebrate(
-        "The photo checks weren’t cooperating. I trust your effort — your task is complete."
-      );
-    else celebrate();
-  } else if (support)
+  if (s.tasks.length && s.tasks.every(task => task.done)) waveGeorge();
+  const check = [...root.querySelectorAll(".task-check")].find(button => button.dataset.id === t.id);
+  check?.classList.add("just-completed");
+  if (earned.length && stats(s).remaining) toast("10-minute break earned.");
+  else if (note) toast(note);
+  else if (support) toast("Photo check unavailable. Task marked complete.");
+  if (support && stats(s).remaining)
     openModal(
       "I trust your effort.",
       `${bubble(
@@ -1909,6 +1869,12 @@ document.addEventListener("click", async (e) => {
     case "settings-page":
       go(el.dataset.to);
       break;
+    case "switch-account":
+      go("switchAccount");
+      break;
+    case "cancel-switch-account":
+      go("settings");
+      break;
     case "sign-out":
       signOut();
       break;
@@ -2235,32 +2201,22 @@ document.addEventListener("submit", async (e) => {
       try { phone = normalizePhone(values.phone); }
       catch (problem) { fail(problem.message); break; }
       error = "";
-      try { await accounts.refreshRetired(phone); activateAccount(phone, values.name.trim()); }
+      try { await accounts.refreshRetired(phone); if (activePhone) persistAccount(); activateAccount(phone, values.name.trim()); }
       catch (problem) { fail(problem.message); break; }
       render();
       syncAccounts();
       break;
     }
     case "first-task": {
-      const data = { title: values.title, duration: values.duration };
-      if (!data.title.trim()) {
-        fail("Give your task a name. A few words are enough.");
-        break;
-      }
-      if (
-        data.duration &&
-        (!Number.isFinite(+data.duration) || +data.duration < 1 || +data.duration > 1440)
-      ) {
-        fail("Choose a duration from 1 to 1,440 minutes, or leave it blank.");
-        break;
-      }
-      try {
-        addTask(s, data);
-      } catch (err) {
-        fail(err.message);
-        break;
-      }
-      render();
+      s.firstTaskDraft = values.title;
+      if (!values.title.trim()) { fail("Enter a task name."); break; }
+      addTask(s, { title: values.title });
+      delete s.firstTaskDraft;
+      s.suggestions = [];
+      s.onboarded = true;
+      s.tutorial = false;
+      rememberLogin();
+      go("home");
       break;
     }
     case "first-goal": {
@@ -2520,7 +2476,7 @@ if (document.modelContext?.registerTool) {
 
 // A neutral redirect page: no account identifiers or task data in the URL.
 if (new URL(location.href).searchParams.get("instagram") === "paused") {
-  openModal("First things first.", `<p>Take a moment before Instagram. Finish your first things or start an earned break, then wait for <b>All changes synced</b>.</p><p>If this is your first check today, open First Things to refresh today’s list. If this opened in Safari, switch to your First Things Home Screen app.</p><button class="button" data-action="close-modal">Got it</button><p class="small muted">This is a Shortcuts reminder, not an iOS app lock.</p>`);
+  openModal("First things first.", `<p>Take a moment before Instagram. Finish your first things or start an earned break.</p><p>If this is your first check today, open First Things to refresh today’s list. If this opened in Safari, switch to your First Things Home Screen app.</p><button class="button" data-action="close-modal">Got it</button><p class="small muted">This is a Shortcuts reminder, not an iOS app lock.</p>`);
   const cleanURL = new URL(location.href); cleanURL.searchParams.delete("instagram");
   history.replaceState(null, "", cleanURL);
 }

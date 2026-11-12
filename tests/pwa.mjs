@@ -7,11 +7,16 @@ for (const icon of manifest.icons) await access(new URL('../docs/'+icon.src,impo
 const handlers = {}, cached = new Map(); let claims=0, skipped=0;
 const origin='https://example.test/first-things-PWA/';
 const cache = {
-  async addAll(paths) { for(const p of paths) { await access(new URL('../docs/'+(p==='./'?'index.html':p),import.meta.url)); cached.set(new URL(p,origin).href,{asset:p}); } },
+  async addAll(requests) { for(const request of requests) {
+    assert.equal(request.cache, 'reload');
+    const p = './' + request.url.slice(origin.length);
+    await access(new URL('../docs/'+(p==='./'?'index.html':p),import.meta.url));
+    cached.set(request.url,{asset:p});
+  } },
   async match(p) { return cached.get(new URL(typeof p==='string'?p:p.url,origin).href); },
 };
 vm.runInNewContext(await readFile(new URL('../docs/sw.js',import.meta.url),'utf8'),{
-  URL, Set, caches:{open:async()=>cache,keys:async()=>['other-app','first-things-shell-old','first-things-shell-v39'],delete:async key=>assert.equal(key,'first-things-shell-old')},
+  URL, Set, Request: class { constructor(path, options) { this.url = new URL(path, origin).href; this.cache = options.cache; } }, caches:{open:async()=>cache,keys:async()=>['other-app','first-things-shell-old','first-things-shell-v40'],delete:async key=>assert.equal(key,'first-things-shell-old')},
   fetch:()=>{throw Error('offline');},
   self:{registration:{scope:origin},clients:{claim:async()=>claims++},skipWaiting:()=>skipped++,addEventListener:(n,fn)=>handlers[n]=fn},
 });
