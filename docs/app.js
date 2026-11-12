@@ -57,11 +57,7 @@ let storageFailed = false;
 // Progress report: Key Results are calculated by the database (first_things_okrs)
 // from everyone's real activity. Nothing on that screen is hard-coded.
 let okr = { phase: "idle", data: null, message: "", requestId: 0 };
-// The sync status stays out of the way when all is well: routine messages ("Saved on this
-// device", "Syncing…", "All changes synced") float over the top as a small pill and fade
-// away. Anything that needs attention (offline, errors, a changed phone number, a
-// storage problem) stays as a banner until it is fixed. Add ?status=on to the address to
-// keep the banner visible all the time, for example during a demo.
+// Keep routine sync silent and show actionable failures.
 function databaseStatus(phase, message = "") {
   const element = document.querySelector("#database-status");
   element.dataset.phase = phase;
@@ -95,7 +91,6 @@ const accounts = createAccountStore({
   remote: cloud,
   online: () => navigator.onLine,
   report(phone, phase, message) {
-    // Already showing "All changes synced"? A routine check has nothing to announce.
     // (Edits switch the status to "Saved on this device" first, so real saves still show.)
     const quiet = (phase === "syncing" || phase === "saved") && document.querySelector("#database-status")?.dataset.phase === "saved";
     if (phone === activePhone && !storageFailed && !quiet) databaseStatus(phase, message);
@@ -246,7 +241,8 @@ const icons = {
   goal: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/>',
   chat: '<path d="M21 11a9 9 0 0 1-9 9H4l-2 2v-10a9 9 0 1 1 19-1Z"/><path d="M7 11h10M7 15h6"/>',
 settings: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
-unlock:
+  lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
+  unlock:
     '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 7-2M12 14v3"/>',
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   chart: '<path d="M5 20v-8M12 20V5M19 20v-5"/>',
