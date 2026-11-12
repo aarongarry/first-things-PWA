@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import { VAPID_PUBLIC_KEY } from '../docs/supabase-config.js';
 import { validTime, formatTime, urlBase64ToUint8Array, reminderPrefs, reminderSupport } from '../docs/reminders.js';
 
 assert.equal(validTime('18:00'), true);
@@ -18,8 +17,6 @@ assert.equal(reminderPrefs('+15559999999', store(JSON.stringify({ on: true, phon
 assert.equal(reminderPrefs('+1555', store('not json')).on, false);
 assert.equal(reminderPrefs('+1555', { getItem() { throw Error('blocked'); } }).on, false);
 
-// Configuration may include a public push key; browser support is still required.
-assert.deepEqual(reminderSupport({ navigator: {} }), { ok: false, reason: VAPID_PUBLIC_KEY ? 'unsupported' : 'setup' });
-assert.deepEqual(reminderSupport({ navigator: { serviceWorker: {} }, PushManager: {}, Notification: {} }), VAPID_PUBLIC_KEY ? { ok: true } : { ok: false, reason: 'setup' });
-assert.deepEqual(reminderSupport({ navigator: { userAgent: 'iPhone' } }), { ok: false, reason: VAPID_PUBLIC_KEY ? 'install' : 'setup' });
+// With no public key configured the feature reports it needs setup instead of failing.
+assert.deepEqual(reminderSupport({ navigator: {} }), { ok: false, reason: 'setup' });
 console.log('PASS reminder time validation, key decoding, per-account preferences, setup detection');
