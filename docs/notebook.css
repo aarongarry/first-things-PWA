@@ -776,3 +776,21 @@ nav { border-top: 0; background-image: var(--squiggle); background-repeat: repea
 /* Today page profile circle: match the Settings one exactly (same size, no button padding squeezing the photo) */
 .daily-header .profile-circle { width: 50px; height: 50px; padding: 0; overflow: hidden; }
 .daily-header .profile-circle .profile-avatar { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+/* bottom tab bar lives outside the scrolling area so it stays put */
+.nav-slot { flex: none; }
+.nav-slot:empty { display: none; }
+.nav-slot .nav { position: static; margin-top: 0; }
+
+/* slide animation when swiping between tabs */
+@keyframes slide-from-right { from { opacity: .4; transform: translateX(40px); } to { opacity: 1; transform: none; } }
+@keyframes slide-from-left { from { opacity: .4; transform: translateX(-40px); } to { opacity: 1; transform: none; } }
+.page.slide-from-right { animation: slide-from-right .22s ease-out; }
+.page.slide-from-left { animation: slide-from-left .22s ease-out; }
+.app-content { overflow-x: hidden; }
+
+/* Today: link to the Completed tasks page */
+.completed-link { margin-top: 16px; }
+/* Completed page: older tasks tucked away */
+.completed-archive { margin-top: 22px; }
+.completed-archive summary { cursor: pointer; font-weight: 700; padding: 10px 0; }
