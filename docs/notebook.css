@@ -15,7 +15,9 @@
   --muted: #76726a;
   --line: #e0dbcd;
   --pale: #f1eee5;
-  --hand: "Patrick Hand", "Bradley Hand", "Segoe Print", "Comic Sans MS", "Chalkboard SE", sans-serif;
+  --body: "Nunito", "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* --hand is kept as a name so older rules still work, but it now points to the same readable font */
+  --hand: var(--body);
   --sticky-yellow: #fffdf8;
   --sticky-pink: #f6f3ea;
   --sticky-mint: #fbf9f2;
@@ -652,12 +654,32 @@ nav button { font-size: 14px; }
 .progress-detail { font-size: 14px; }
 .progress-card .progress-line { height: 6px; margin-top: 6px; }
 
-/* ---------- one font, everything hand drawn ---------- */
+/* ---------- one readable font for the whole app ---------- */
 *, *::before, *::after {
-  font-family: var(--hand) !important;
-  font-weight: 400 !important;
+  font-family: var(--body) !important;
   font-synthesis: none;
 }
+/* Nunito reads larger than Patrick Hand at the same size, so ease the sizes back */
+h1, h2, h3 { font-weight: 800; letter-spacing: -0.3px; }
+h1 { font-size: 28px; }
+.welcome h1 { font-size: 28px; }
+.daily-header h1 { font-size: 25px; }
+.task-heading h2, .goal-card h2 { font-size: 20px; }
+.progress-card h2 { font-size: 18px; }
+.wordmark { font-weight: 800; }
+.section-label, .overline, .overline-dark, .eyebrow, .done-label { font-size: 11px; font-weight: 700; letter-spacing: 1.2px; }
+body { font-size: 15px; }
+b, strong { font-weight: 700; }
+.task-card b, .task-title b { font-size: 16px; font-weight: 700; }
+.task-title small, small, .small, .muted, .body-copy { font-size: 13.5px; }
+.button { font-size: 16px; font-weight: 700; }
+.setting-row b, .break-card b, .access-strip b, .george-home b { font-size: 16px; font-weight: 700; }
+nav button { font-size: 12px; font-weight: 600; }
+.field > span, .field-label { font-size: 14px; font-weight: 700; }
+.chips button { font-size: 14px; }
+.toast, .update-banner, .database-status { font-size: 14px; }
+.bubble { font-size: 15px; line-height: 1.55; }
+.progress-detail { font-size: 13px; }
 :root {
   --wob: 14px 4px 12px 5px / 5px 12px 4px 14px;
   --wob2: 5px 13px 6px 12px / 12px 5px 13px 6px;
@@ -721,12 +743,18 @@ nav { border-top: 0; background-image: var(--squiggle); background-repeat: repea
   border: 2px solid var(--ink);
   border-radius: var(--wob) !important;
   padding: 7px 13px 8px;
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 700;
   line-height: 1.1;
-  right: -4px;
+  /* anchor to George (centered) rather than the far right edge */
+  right: auto;
+  left: calc(50% + 40px);
   top: 10px;
   transform: rotate(-2deg);
   box-shadow: none;
+}
+@media (max-width: 650px) {
+  .hero-art .hello { left: calc(50% + 28px); }
 }
 .hero-art .hello::after {
   content: "";
@@ -741,3 +769,10 @@ nav { border-top: 0; background-image: var(--squiggle); background-repeat: repea
   transform: rotate(45deg);
   border-radius: 0 0 0 3px;
 }
+
+/* Today page: lock icons for the empty list and the all-done banner */
+.completed-banner > span svg { width: 32px; height: 32px; }
+
+/* Today page profile circle: match the Settings one exactly (same size, no button padding squeezing the photo) */
+.daily-header .profile-circle { width: 50px; height: 50px; padding: 0; overflow: hidden; }
+.daily-header .profile-circle .profile-avatar { width: 100%; height: 100%; object-fit: cover; display: block; }
