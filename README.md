@@ -48,17 +48,15 @@ The install button displays instructions on iPhone; Safari requires you to finis
 
 ## Edit your profile
 
-1. Open **Settings** using the bottom navigation or your picture (or initial) at the top of Today.
+1. Open **Settings** using the bottom navigation or your initial at the top of Today.
 2. Tap **Edit** next to your name and number.
 3. Change your name, phone number, or both, then tap **Save profile**.
-
-**Profile picture:** tap **Add photo** (or **Change photo**) next to your name and pick a picture. It is cropped to a square, shrunk to 256 px, saved with your account, and shown in Settings and at the top of Today. **Remove** goes back to your initial.
 
 Name changes save on this device immediately and can sync later if you are offline. A phone-number change requires internet so the app can sync pending tasks, check that the new number is unused, and move the account together with its goals, tasks, preferences, and progress.
 
 After changing numbers, use the **new number** to sign in on every device. An account already using that number will not be overwritten or merged. The old number stops being a sign-in for this account (you can move back to a number previously held by the same account); devices still signed in with it are asked to sign out, and cannot recreate the old cloud account. Unsynced edits from another device remain in that device’s old local account, so sync your other devices before changing numbers.
 
-If the connection drops during a number change, the app keeps a recovery record and retries while open after reconnecting. Wait for confirmation before switching numbers again. No verification code is sent, so anyone who knows a number can open that account.
+If the connection drops during a number change, the app keeps a recovery record and retries while open after reconnecting. Wait for confirmation before switching numbers again. No verification code is sent; these remain demo accounts.
 
 ## Instagram reminder with Apple Shortcuts (iPhone)
 
@@ -163,9 +161,9 @@ Because an account's saved state only holds the current day, `supabase/okr-repor
 
 **Real:** Home Screen installation, phone-number account lookup, persistent goals/tasks, offline editing, reconnect sync, live OKR Key Results, and responsive mobile layout.
 
-**Optional integrations:** an Apple Shortcuts Instagram reminder uses real synced task/break status, after manual setup on each iPhone. Google Calendar connects for real with read-only access, and photo checks use Claude Haiku 5.5 (see below).
+**Optional integration:** an Apple Shortcuts Instagram reminder uses real synced task/break status, after manual setup on each iPhone.
 
-**Not possible in a web app:** blocking other apps. **Settings → App access** (or the apps card on Today) shows what is paused and why, and the Apple Shortcuts automation is what actually sends you back from a paused app.
+**Simulated:** the in-app blocking preview, George AI, calendar connection, photo verification, and lock-screen notifications. A PWA cannot enforce a native iPhone app lock.
 
 ## Development
 
@@ -197,80 +195,13 @@ For **Reminder only** tasks, also run **`supabase/task-options.sql`** after `okr
 
 Set `USE_SUPABASE` to `false` for device-only persistence without cloud syncing.
 
-## Google Calendar
-
-Page 4 of Getting Started (and **Settings → Calendar connection**) signs in with Google and shows today’s events and free time. Access is read-only: the scope is `calendar.events.readonly`, plus `openid email` to show which account is connected.
-
-**How it works.** The browser never holds a Google token. The `google-calendar` Supabase Edge Function runs the OAuth code exchange, stores the refresh token encrypted in `first_things_calendar_connections` (service role only), and returns today’s events to the app. Because phone accounts are unverified, each device that connects keeps a random key in its own storage. Only its hash is stored on the server, and reading events requires it. Another device on the same account shows “Connected on another device” until it connects too. Skipping stores nothing. Denying or unticking calendar access returns to page 4 with a message and stores nothing. If access is removed in the Google account, the app shows a notice and offers to reconnect. **Disconnect** revokes the token with Google and deletes it.
-
-### 1. Google Cloud Console
-
-1. Create a project at [console.cloud.google.com](https://console.cloud.google.com).
-2. **APIs & Services → Library**: enable **Google Calendar API**.
-3. **Google Auth Platform → Branding**: app name *First Things*, support email, developer contact.
-4. **Audience**: User type **External**, publishing status **Testing**. Add every tester’s Gmail under **Test users**.
-5. **Data Access → Add or remove scopes**: add `openid`, `.../auth/userinfo.email`, and `.../auth/calendar.events.readonly`.
-6. **Clients → Create client → Web application**.
-   - Authorized JavaScript origins: `https://aarongarry.github.io` and `http://localhost:4173`
-   - Authorized redirect URI: `https://fvvekwiatzivjyvppwmp.supabase.co/functions/v1/google-calendar`
-7. Copy the client ID and secret.
-
-In **Testing** mode Google ends each sign-in after 7 days, so testers reconnect weekly. Removing that limit requires publishing the app and passing Google’s verification for the calendar scope.
-
-### 2. Secrets (.env)
-
-```sh
-cp .env.example .env          # .env is in .gitignore; never commit it
-openssl rand -base64 32       # paste as TOKEN_ENCRYPTION_KEY
-```
-
-Fill in `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`. Keep `.env` at the repository root, never inside `docs/`, which is published. Keep the same `TOKEN_ENCRYPTION_KEY` afterwards: changing it makes stored tokens unreadable, and everyone must reconnect.
-
-### 3. Database and Edge Function
-
-Run **`supabase/google-calendar.sql`** in the SQL Editor after `pwa-demo-accounts.sql`. Then, from the repository root:
-
-```sh
-npx supabase@latest login
-npx supabase@latest link --project-ref fvvekwiatzivjyvppwmp
-npx supabase@latest secrets set --env-file .env
-npx supabase@latest functions deploy google-calendar --no-verify-jwt
-```
-
-`--no-verify-jwt` is required because Google’s redirect carries no Supabase token. The function checks the page origin, the one-time sign-in state, and the device key itself. To test locally, open `http://localhost:4173`; it calls the deployed function, which allows that origin through `APP_ORIGINS`.
-
-**Known limits.** On an installed iPhone app, Google may return to Safari instead of the Home Screen app. Safari then says to switch back, and the app picks up the connection when it is reopened. Anyone with a phone number can still press Disconnect for that account. Sending tasks to Google Calendar needs a write scope, so connected users will approve again when that feature arrives.
-
-## Photo verification
-
-A task with **Verify with a photo** turned on opens the camera when it is checked off. The photo is shrunk on the phone (1024 px), sent once to the `verify-photo` Supabase Edge Function, and checked by **Claude Haiku 5.5** (`claude-haiku-5-5`), which answers **pass**, **unsure** or **fail** with a one-line reason. Pass and unsure complete the task. Fail asks for another photo; after three fails, George trusts your effort and completes it anyway. Photo checks stay optional per task.
-
-**Privacy.** Photos are never stored on a server. Each one goes to Anthropic once for the check. A small copy (320 px) stays in this browser until midnight and shows next to the finished task. Unchecking a task deletes its copy, and checking it again needs a new photo.
-
-**Never stuck.** If the check can't run (offline, function not deployed, missing key, daily limit reached, or an Anthropic outage), the photo counts as proof and the task completes.
-
-**Cost limits.** Phone accounts are unverified, so `supabase/photo-checks.sql` caps checks at 30 per account and 1,000 for the whole app per UTC day. Change them with the `PHOTO_CHECKS_PER_ACCOUNT` and `PHOTO_CHECKS_PER_APP` secrets. At Haiku prices a check costs roughly $0.0003.
-
-### Setup
-
-1. Create an API key at [console.anthropic.com](https://console.anthropic.com) (add billing first).
-2. Run **`supabase/photo-checks.sql`** in the SQL Editor after `pwa-demo-accounts.sql`.
-3. From the repository root (`APP_ORIGINS` is already set for Google Calendar):
-
-```sh
-npx supabase@latest secrets set ANTHROPIC_API_KEY=sk-ant-...
-npx supabase@latest functions deploy verify-photo --no-verify-jwt
-```
-
-Never put the key in `docs/` or commit it; it lives only in Supabase secrets.
-
 ## Publish
 
 GitHub repository **Settings → Pages → Deploy from a branch → main → /docs**. HTTPS is required. This repository is configured to publish that folder automatically when `main` changes. Relative manifest URLs and the service-worker scope support the `/first-things-PWA/` subpath.
 
 ## Verification
 
-`npm test` covers task behavior, legacy session/sync behavior, phone normalization, durable offline edits, reconnect, account isolation, two-device merge/deletion conflicts, concurrent saves, storage failure, service-worker caching at a repository subpath, profile edits, number collisions, recovery after a phone-change response is lost, the Google Calendar sign-in, device-key, revocation and free-time logic against a mocked Google, and photo verification (input checks, daily limits, fallbacks, the Claude request shape, and today's kept photos) against a mocked Claude.
+`npm test` covers task behavior, legacy session/sync behavior, phone normalization, durable offline edits, reconnect, account isolation, two-device merge/deletion conflicts, concurrent saves, storage failure, service-worker caching at a repository subpath, profile edits, number collisions, and recovery after a phone-change response is lost.
 
 For a device smoke test:
 
