@@ -87,6 +87,8 @@ function databaseStatus(phase, message = "") {
   }
   if (phase === "moved") {
     root.inert = true;
+    const navSlot = document.querySelector("#nav-slot");
+    if (navSlot) navSlot.inert = true;
     const button = document.createElement("button");
     button.textContent = "Sign out";
     button.addEventListener("click", signOut);
@@ -221,6 +223,8 @@ function activateAccount(phone, name = "") {
 function signOut() {
   persistAccount();
   root.inert = false;
+  const navSlot = document.querySelector("#nav-slot");
+  if (navSlot) navSlot.inert = false;
   activePhone = null;
   lastSnapshot = null;
   s = initial();
@@ -370,6 +374,39 @@ function go(screen) {
   root.scrollTop = 0;
   if (screen === "progress") void refreshOkrs();
 }
+// ---- Swipe between tabs (touch screens) ----
+// Swipe left for the next tab, right for the previous one. Same order as the tab bar.
+const SWIPE_TABS = ["home", "goals", "settings"];
+let swipeStart = null;
+root.addEventListener("touchstart", (e) => {
+  swipeStart = null;
+  if (e.touches.length !== 1 || root.inert || !SWIPE_TABS.includes(s.screen)) return;
+  if (document.querySelector("dialog[open]")) return;
+  // Leave form fields, sliders and sideways-scrolling rows alone.
+  if (e.target.closest("input, textarea, select, [contenteditable], .chips")) return;
+  const t = e.touches[0];
+  // Ignore touches that start at the screen edge: iPhone uses those for Back/Forward.
+  if (t.clientX < 24 || t.clientX > window.innerWidth - 24) return;
+  swipeStart = { x: t.clientX, y: t.clientY, time: Date.now() };
+}, { passive: true });
+root.addEventListener("touchend", (e) => {
+  if (!swipeStart) return;
+  const t = e.changedTouches[0];
+  const dx = t.clientX - swipeStart.x, dy = t.clientY - swipeStart.y;
+  const quick = Date.now() - swipeStart.time < 600;
+  swipeStart = null;
+  // A clear sideways swipe: far enough, mostly horizontal, and not a slow drag.
+  if (!quick || Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.5) return;
+  const i = SWIPE_TABS.indexOf(s.screen);
+  const next = SWIPE_TABS[i + (dx < 0 ? 1 : -1)];
+  if (!next) return;
+  closeModal();
+  go(next);
+  const page = root.querySelector(".page");
+  if (page) page.classList.add(dx < 0 ? "slide-from-right" : "slide-from-left");
+}, { passive: true });
+root.addEventListener("touchcancel", () => { swipeStart = null; }, { passive: true });
+
 function today() {
   return new Date(now(s)).toLocaleDateString("en-US", {
     weekday: "long",
@@ -436,9 +473,17 @@ function render() {
     settings: settings,
     locked: locked,
     lockscreen: lockscreen,
+    completed: completedPage,
   };
   // Older saved setup screens (the George quiz, practice task) now land on the first-task step.
   root.innerHTML = (map[s.screen] || (activePhone && !s.onboarded ? firstTask : home))();
+  // Keep the bottom tab bar outside the scrolling area so it never moves.
+  const navSlot = document.querySelector("#nav-slot");
+  if (navSlot) {
+    const nav = root.querySelector(".nav");
+    navSlot.replaceChildren(...(nav ? [nav] : []));
+    navSlot.inert = root.inert;
+  }
   persistAccount();
   if (s.screen === "chat")
     root.scrollTop = root.scrollHeight;
@@ -452,7 +497,7 @@ function render() {
 // Every screen change is saved as a browser history entry, so the phone's Back
 // gesture/button returns to the previous screen instead of leaving the app.
 const ONBOARDING_SCREENS = ["welcome", "firstTask", "firstGoal", "calendar", "apps", "breaks"];
-const MAIN_SCREENS = ["home", "goals", "progress", "chat", "settings", "locked", "lockscreen"];
+const MAIN_SCREENS = ["home", "goals", "progress", "chat", "settings", "locked", "lockscreen", "completed"];
 function syncHistory() {
   if (history.state?.ft === s.screen) return; // already recorded (also true right after Back)
   // Keep the hidden Progress route in the address; every other screen uses the plain address.
@@ -772,14 +817,60 @@ function home() {
       ? todo.map(taskRow).join("")
       : `<div class="completed-banner"><span>${icon("unlock")}</span><h3>First things, done.</h3><p>You made time for what matters.<br>Your apps are fully unlocked.</p><button class="text-link" data-action="celebrate">Enjoy this moment</button></div>`
   }${
-    done.length
-      ? `<div class="done-label">COMPLETED · ${done.length}</div>${done
-          .map(taskRow)
-          .join("")}`
+    done.length || recentCompleted().length
+      ? `<button class="setting-row completed-link" data-action="nav" data-to="completed"><span><b>Completed tasks</b><small>${
+          done.length
+        } done today · ${recentCompleted().length} earlier this week</small></span><span>›</span></button>`
       : ""
   }</section>${navigation(
     "home"
   )}`;
+}
+// ---- Completed tasks ----
+// Today's finished tasks stay checkable here. Earlier days come from the completed log:
+// the last 7 days are shown by day, anything older is tucked into the Archive.
+const daysAgo = (day) => dayNumber(localDay(now(s))) - dayNumber(day);
+function recentCompleted() {
+  return (s.completed || []).filter((x) => daysAgo(x.doneOn) >= 1 && daysAgo(x.doneOn) <= 7);
+}
+function completedRow(x) {
+  const goal = s.goals.find((g) => g.id === x.goalId);
+  return `<div class="task-card completed"><span class="task-check" aria-hidden="true">✓</span><span class="task-title"><b>${esc(
+    x.title
+  )}</b>${goal ? `<small>${esc(goal.title)}</small>` : ""}</span></div>`;
+}
+function completedGroups(list) {
+  const byDay = new Map();
+  for (const x of list) byDay.set(x.doneOn, [...(byDay.get(x.doneOn) || []), x]);
+  return [...byDay.entries()]
+    .sort(([a], [b]) => (a < b ? 1 : -1))
+    .map(
+      ([day, items]) =>
+        `<div class="done-label">${
+          daysAgo(day) === 1 ? "YESTERDAY" : esc(dateText(day).toUpperCase())
+        } · ${items.length}</div>${items.map(completedRow).join("")}`
+    )
+    .join("");
+}
+function completedPage() {
+  const today = s.tasks.filter((t) => t.done);
+  const week = recentCompleted();
+  const archive = (s.completed || []).filter((x) => daysAgo(x.doneOn) > 7);
+  return `<section class="page"><button class="back" data-action="nav" data-to="home">${icon(
+    "back"
+  )} Today</button><h1>Completed tasks<span class="blue">.</span></h1>${
+    today.length
+      ? `<div class="done-label">TODAY · ${today.length}</div>${today.map(taskRow).join("")}`
+      : ""
+  }${completedGroups(week)}${
+    !today.length && !week.length
+      ? `<div class="empty-state"><h3>Nothing finished this week yet.</h3><p>Tasks you check off show up here for a week.</p></div>`
+      : ""
+  }${
+    archive.length
+      ? `<details class="completed-archive"><summary>Archive · ${archive.length}</summary>${completedGroups(archive)}</details>`
+      : ""
+  }</section>${navigation("home")}`;
 }
 function taskRow(t) {
   const goal = s.goals.find((g) => g.id === t.goalId);

@@ -18,7 +18,7 @@ export function accountSnapshot(s) {
   return copy({
     profile: s.profile, onboarded: s.onboarded, tone: s.tone,
     answers: s.answers, googleCalendar: s.googleCalendar === true, tutorial: s.tutorial,
-    goals: s.goals, tasks: s.tasks,
+    goals: s.goals, tasks: s.tasks, completed: s.completed || [],
     daily: { day: s.day, templates: s.templates, ledger: s.ledger,
       activeUntil: s.activeUntil, requestedBreaks: s.requestedBreaks,
       selectedApps: s.selectedApps, timeOffset: s.timeOffset },
