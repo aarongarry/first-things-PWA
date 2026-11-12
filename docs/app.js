@@ -215,7 +215,7 @@ function activateAccount(phone, name = "") {
     storageFailed = false;
   } catch { storageFailed = true; databaseStatus("storage"); }
   lastSnapshot = accountSnapshot(s);
-  s.screen = s.onboarded ? "home" : "tone";
+  s.screen = s.onboarded ? "home" : "firstTask";
   rememberLogin();
 }
 function signOut() {
@@ -288,7 +288,7 @@ const tones = {
   balanced: {
     label: "Balanced",
     symbol: "✳",
-    example: "You’ve got this. Let’s make a little progress.",
+    example: "You’ve got this. Let’s make some progress.",
   },
   direct: {
     label: "Direct",
@@ -301,7 +301,7 @@ const apps = [
     name: "Instagram",
     short: "◎",
     color: "#d54882",
-    desc: "A little less endless scrolling",
+    desc: "Less endless scrolling",
   },
   {
     name: "TikTok",
@@ -325,7 +325,7 @@ const apps = [
     name: "X",
     short: "𝕏",
     color: "#1a2238",
-    desc: "Give the feed a little pause",
+    desc: "Give the feed a pause",
   },
   {
     name: "Snapchat",
@@ -384,16 +384,17 @@ function dateText(v) {
     year: "numeric",
   });
 }
+const SETUP_STEPS = 5;
 function step(title, subtitle, number, body, footer = "", back = "") {
   return `<section class="page"><div class="step-top"><button class="back" data-action="${
     back || "back"
   }">${icon("back")} Back</button><span>${
-    s.onboarded ? "YOUR PREFERENCES" : `GETTING STARTED · ${number} OF 8`
+    s.onboarded ? "YOUR PREFERENCES" : `GETTING STARTED · ${number} OF ${SETUP_STEPS}`
   }</span></div>${
     s.onboarded
       ? ""
       : `<div class="step-track">${Array.from(
-          { length: 8 },
+          { length: SETUP_STEPS },
           (_, i) => `<i class="${i < number ? "done" : ""}"></i>`
         ).join("")}</div>`
   }<h1>${title}</h1><p class="body-copy">${subtitle}</p>${body}${
@@ -404,7 +405,6 @@ function navigation(active) {
   return `<nav class="nav" aria-label="Main navigation">${[
     ["home", "Today", "home"],
     ["goals", "Goals", "goal"],
-    ["chat", "George", "chat"],
     ["settings", "Settings", "settings"],
   ]
     .map(
@@ -424,13 +424,11 @@ function render() {
   const map = {
     welcome: welcome,
     tone: tone,
-    conversation: conversation,
+    firstTask: firstTask,
     firstGoal: firstGoal,
     calendar: calendar,
     apps: appSelection,
     breaks: breakPrefs,
-    tutorial: tutorial,
-    suggestions: suggestions,
     home: home,
     goals: goals,
     progress: progressReport,
@@ -439,9 +437,10 @@ function render() {
     locked: locked,
     lockscreen: lockscreen,
   };
-  root.innerHTML = (map[s.screen] || home)();
+  // Older saved setup screens (the George quiz, practice task) now land on the first-task step.
+  root.innerHTML = (map[s.screen] || (activePhone && !s.onboarded ? firstTask : home))();
   persistAccount();
-  if (s.screen === "chat" || s.screen === "conversation")
+  if (s.screen === "chat")
     root.scrollTop = root.scrollHeight;
   document.querySelector("#phone-time").textContent = new Date(
     now(s)
@@ -452,7 +451,7 @@ function render() {
 // ---- Back button support ----
 // Every screen change is saved as a browser history entry, so the phone's Back
 // gesture/button returns to the previous screen instead of leaving the app.
-const ONBOARDING_SCREENS = ["welcome", "tone", "conversation", "firstGoal", "calendar", "apps", "breaks", "tutorial", "suggestions"];
+const ONBOARDING_SCREENS = ["welcome", "firstTask", "firstGoal", "calendar", "apps", "breaks"];
 const MAIN_SCREENS = ["home", "goals", "progress", "chat", "settings", "locked", "lockscreen"];
 function syncHistory() {
   if (history.state?.ft === s.screen) return; // already recorded (also true right after Back)
@@ -477,7 +476,7 @@ window.addEventListener("popstate", (event) => {
   if (target === "progress") void refreshOkrs();
 });
 function welcome() {
-  return `<section class="page welcome"><div class="wordmark"><span class="brand-mark">✓</span>first things<span class="brand-period">.</span></div><div class="hero-art"><img src="george.png" alt="George, your friendly blue companion"><span class="hello">Hey, I’m George!</span></div><h1>First, your goals.<br><span>Then, your scroll.</span></h1><p class="body-copy">Make a little progress on what matters.<br>Unlock a little time for everything else.</p><form data-form="signup" novalidate><label class="field"><span>Your name <small>(optional for returning users)</small></span><input name="name" value="${esc(
+  return `<section class="page welcome"><div class="wordmark"><span class="brand-mark">✓</span>first things<span class="brand-period">.</span></div><div class="hero-art"><img src="george.png" alt="George, your friendly blue companion"><span class="hello">Hey, I’m George!</span></div><h1>First, your goals.<br><span>Then, your scroll.</span></h1><form data-form="signup" novalidate><label class="field"><span>Your name <small>(optional for returning users)</small></span><input name="name" value="${esc(
     s.profile.name
   )}" placeholder="Your first name" autocomplete="given-name" maxlength="40"></label><label class="field"><span>Phone number</span><input type="tel" name="phone" value="${esc(
     s.profile.phone
@@ -492,7 +491,7 @@ function tone() {
       ? "Your choice changes his encouragement right away."
       : "I’m George. I’ll help turn your big intentions into small, doable things.",
     1,
-    `<div class="george-intro">${avatar()}<span>A little help. A little accountability.<br>Always on your side.</span></div><p class="field-label">How should I cheer you on?</p>${Object.entries(
+    `<div class="george-intro">${avatar()}<span>Some help and some accountability.<br>Always on your side.</span></div><p class="field-label">How should I cheer you on?</p>${Object.entries(
       tones
     )
       .map(
@@ -513,76 +512,47 @@ function tone() {
     btn(s.onboarded ? "Done" : "That sounds like me", "tone-next")
   );
 }
-const questions = [
-  {
-    text: "First, what does life look like for you right now?",
-    options: [
-      "I’m in college",
-      "I’m studying and working",
-      "I’m working full-time",
-    ],
-  },
-  {
-    text: "What do you love making time for outside your responsibilities?",
-    options: [
-      "Friends, music, and the gym",
-      "Reading and creative projects",
-      "Gaming and getting outside",
-    ],
-  },
-  {
-    text: "When do you have a little time, and what tends to get in the way?",
-    options: [
-      "After class. I get pulled into scrolling.",
-      "Mornings. Big tasks feel overwhelming.",
-      "Evenings. My schedule is unpredictable.",
-    ],
-  },
-];
-function conversation() {
-  const n = s.answers.length;
+// Setup step 1: a guided "make your first task" tutorial.
+const FIRST_TASK_EXAMPLES = ["Read 10 pages", "Go for a walk", "Tidy my desk"];
+function firstTask() {
+  const t = s.tasks[0];
+  if (!t)
+    return step(
+      "Let’s make your<br>first task.",
+      "Tasks are the small things on today’s list. Finish them to earn breaks.",
+      1,
+      `${bubble(
+        "Pick something small you can finish today. A few words is enough."
+      )}<form data-form="first-task" novalidate><label class="field"><span>What do you want to do today?</span><input name="title" placeholder="Read 10 pages" maxlength="180" autocomplete="off"></label><div class="chips">${FIRST_TASK_EXAMPLES.map(
+        (x) =>
+          `<button type="button" data-action="task-example" data-value="${esc(
+            x
+          )}">${esc(x)}</button>`
+      ).join(
+        ""
+      )}</div><label class="field"><span>Minutes <em>optional</em></span><input name="duration" type="number" min="1" max="1440" placeholder="e.g. 15"></label><div class="form-error" role="alert"></div><button class="button">Add to today</button></form>`,
+      btn("Skip for now", "first-task-next", "ghost")
+    );
   return step(
-    "Let’s get to know you.",
-    "Three quick exchanges. No perfect answers needed.",
-    2,
-    `<div class="conversation-log">${s.answers
-      .map(
-        (a, i) =>
-          `${bubble(questions[i].text)}<div class="user-bubble">${esc(a)}</div>`
-      )
-      .join("")}${
-      n < 3
-        ? bubble(
-            n
-              ? [
-                  "",
-                  "That helps — we’ll keep your plan realistic. ",
-                  "I hear you. Let’s work with your day, not against it. ",
-                ][n] + questions[n].text
-              : questions[0].text
-          )
-        : bubble(
-            `Thanks, ${esc(
-              s.profile.name
-            )}. We’ll start small, make room for what you enjoy, and find one meaningful goal.`
-          )
-    }</div>${
-      n < 3
-        ? `<div class="chips">${questions[n].options
-            .map(
-              (o) =>
-                `<button data-action="answer" data-value="${esc(o)}">${esc(
-                  o
-                )}</button>`
-            )
-            .join(
-              ""
-            )}</div><form class="composer" data-form="answer"><input name="answer" aria-label="Your reply to George" placeholder="Or tell me in your own words…" maxlength="500"><button aria-label="Send reply">${icon(
-            "send"
-          )}</button></form>`
+    "Nice! That’s your<br>first task.",
+    "It’s on today’s list, ready when you are.",
+    1,
+    `${bubble(
+      "When you finish it, tap the box on your Today screen. Every task you finish gets you closer to a break."
+    )}<div class="task-card practice"><span class="task-check"></span><span><b>${esc(
+      t.title
+    )}</b><small>${
+      t.duration ? esc(t.duration) + " min · " : ""
+    }Today</small></span></div><div class="success-note">✓ Added to today’s list.</div>${
+      s.tasks.length > 1
+        ? `<p class="small muted">${s.tasks.length} tasks on today’s list.</p>`
         : ""
     }`,
-    n === 3 ? btn("Choose my first goal", "first-goal") : ""
+    `${btn("Next: set a bigger goal", "first-task-next")}${btn(
+      "Add another task",
+      "new-task",
+      "ghost"
+    )}`
   );
 }
 function firstGoal() {
@@ -590,7 +560,7 @@ function firstGoal() {
   return step(
     "What matters<br>to you right now?",
     "A goal is your bigger “why.” Your daily tasks will be the small steps that get you there.",
-    3,
+    2,
     `<form data-form="first-goal" novalidate><label class="field"><span>My bigger goal</span><textarea name="title" placeholder="Feel ready for my final exams" maxlength="180">${esc(
       s.goalDraftTitle ?? g?.title ?? ""
     )}</textarea></label><div class="chips"><button type="button" data-action="goal-example" data-value="Feel ready for my final exams">Be ready for finals</button><button type="button" data-action="goal-example" data-value="Build a consistent fitness routine">Move more</button></div><label class="field"><span>Target date</span><input type="date" min="${localDay()}" name="target" value="${
@@ -602,9 +572,9 @@ function firstGoal() {
 }
 function calendar() {
   return step(
-    "A little context<br>for your day.",
+    "Some context<br>for your day.",
     "Connecting a calendar helps George see where a small task might fit. It’s completely optional.",
-    4,
+    3,
     `<div class="calendar-illustration">${icon(
       "calendar"
     )}<span>Make space,<br>not more pressure.</span></div>${
@@ -643,7 +613,7 @@ function appSelection() {
   return step(
     "Less distraction.<br>More intention.",
     "Choose the apps that wait while you have unfinished tasks. An earned break opens them temporarily.",
-    5,
+    4,
     `${apps
       .map(
         (a) =>
@@ -672,9 +642,9 @@ function appSelection() {
 function breakPrefs() {
   const st = stats(s);
   return step(
-    "Progress deserves<br>a little breathing room.",
+    "Progress deserves<br>some breathing room.",
     "Choose how many 10-minute breaks you’d like to earn. Start an earned break whenever you’re ready.",
-    6,
+    5,
     `<div class="break-hero">${icon(
       "leaf"
     )}<div class="counter"><button data-action="break-minus" aria-label="Fewer breaks" ${
@@ -712,68 +682,6 @@ function breakPrefs() {
     btn(s.onboarded ? "Done" : "Sounds good", "breaks-next")
   );
 }
-function tutorial() {
-  return step(
-    "Let’s try a tiny win.",
-    "This is just practice. It won’t count toward your daily list or earn a break.",
-    7,
-    `${bubble(
-      s.tutorial
-        ? "See? Small steps count. Now let’s choose your real first things."
-        : "Take a breath. Drop your shoulders. Then tap the circle below."
-    )}<button class="task-card practice ${
-      s.tutorial ? "completed" : ""
-    }" data-action="practice"><span class="task-check">${
-      s.tutorial ? "✓" : ""
-    }</span><span><b>Take one slow breath</b><small>Practice task · just for you</small></span></button>${
-      s.tutorial
-        ? '<div class="success-note">✓ “Take one slow breath” — your first little win!</div>'
-        : ""
-    }<div class="tutorial-note">${icon(
-      "check"
-    )}Most tasks are this simple.<br>Photo checks are always your choice.</div>`,
-    btn(
-      "Let’s make my real list",
-      "tutorial-next",
-      "",
-      s.tutorial ? "" : "disabled"
-    )
-  );
-}
-function suggestions() {
-  const count = s.suggestions.filter((x) => x.selected).length;
-  return step(
-    "Big goal.<br>Small first things.",
-    "Here are a few starting points. Choose what feels right, edit anything, or make your own list.",
-    8,
-    `${bubble(
-      `For “${esc(
-        s.goals[0]?.title
-      )},” a short, focused start can go a long way.`
-    )}${s.suggestions
-      .map(
-        (t) =>
-          `<div class="suggestion-card"><label class="suggestion-choice"><input type="checkbox" data-suggestion="${
-            t.id
-          }" ${t.selected ? "checked" : ""}><span><b>${esc(
-            t.title
-          )}</b><small>${t.duration} min · ${esc(
-            t.why
-          )}</small></span></label><button class="text-link" data-action="edit-suggestion" data-id="${
-            t.id
-          }">Adjust task</button></div>`
-      )
-      .join(
-        ""
-      )}<p class="small muted">Only tasks you approve will enter today’s list.</p>`,
-    `${btn(
-      count
-        ? `Add ${count} task${count === 1 ? "" : "s"} to today`
-        : "Continue with an empty list",
-      "approve-onboarding"
-    )}${btn("I’ll create my own tasks", "own-tasks", "ghost")}`
-  );
-}
 function nextBreakText() {
   const st = stats(s);
   if (!st.total) return "Add a task to start making progress.";
@@ -797,13 +705,11 @@ function home() {
     reminderNote = st.reminders ? ` · ${st.reminders} reminder${st.reminders === 1 ? "" : "s"}` : "";
   return `<section class="page daily"><header class="daily-header"><div><span class="section-label">${today()}</span><h1>Your day, ${esc(
     name
-  )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${esc(
-    name[0]?.toUpperCase()
-  )}</button></header><div class="progress-card"><div><span class="overline">YOUR FIRST THINGS</span><h2>${
+  )}<span class="blue">.</span></h1></div><button class="profile-circle" data-action="nav" data-to="settings" aria-label="Open settings">${profileFace()}</button></header><div class="progress-card"><div><span class="overline">YOUR FIRST THINGS</span><h2>${
     st.total
       ? st.remaining === 0
         ? "Look at you go."
-        : `${st.remaining} little step${st.remaining === 1 ? "" : "s"} left.`
+        : `${st.remaining} step${st.remaining === 1 ? "" : "s"} left.`
       : s.tasks.length
       ? "Just reminders today."
       : "A fresh start."
@@ -827,9 +733,9 @@ function home() {
       : "Your apps are unlocked"
   }</b><small>${
     st.active
-      ? "A little time for yourself."
+      ? "Time for yourself."
       : st.blocked
-      ? "A little focus now. A little freedom later."
+      ? "Focus now. Freedom later."
       : st.remaining
       ? "Pick your apps in Settings."
       : "Until midnight, unless you add a task."
@@ -856,32 +762,22 @@ function home() {
   )}</button></div>${
     !s.tasks.length
       ? `<div class="empty-state">${icon(
-          "spark"
-        )}<h3>A little space for possibility.</h3><p>Add something you want to do today.<br>A few words are all you need.</p>${btn(
+          "lock"
+        )}<h3>Room for possibility.</h3><p>Add something you want to do today.<br>A few words are all you need.</p>${btn(
           "Add my first task",
           "new-task",
           "secondary"
         )}</div>`
       : todo.length
       ? todo.map(taskRow).join("")
-      : `<div class="completed-banner"><span>✦</span><h3>First things, done.</h3><p>You made time for what matters.<br>Your apps are fully unlocked.</p><button class="text-link" data-action="celebrate">Enjoy this little moment</button></div>`
+      : `<div class="completed-banner"><span>${icon("unlock")}</span><h3>First things, done.</h3><p>You made time for what matters.<br>Your apps are fully unlocked.</p><button class="text-link" data-action="celebrate">Enjoy this moment</button></div>`
   }${
     done.length
       ? `<div class="done-label">COMPLETED · ${done.length}</div>${done
           .map(taskRow)
           .join("")}`
       : ""
-  }<button class="add-task" data-action="new-task">${icon(
-    "plus"
-  )} Add a little first thing</button><button class="george-home" data-action="nav" data-to="chat">${avatar()}<span><b>Big task on your mind?</b><small>Let’s find a small place to start.</small></span>${icon(
-    "chat"
-  )}</button>${
-    s.calendar
-      ? '<div class="calendar-mini">' +
-        icon("calendar") +
-        ' Next up: library study group · 1:30 PM <span class="pill">DEMO</span></div>'
-      : ""
-  }<p class="day-note">A new day starts at midnight. <button data-action="day-rules">How it works</button></p></section>${navigation(
+  }</section>${navigation(
     "home"
   )}`;
 }
@@ -908,7 +804,7 @@ function taskRow(t) {
     ]
       .filter(Boolean)
       .map(esc)
-      .join(" · ") || "Your own little first thing"
+      .join(" · ") || "Your own first thing"
   }</small></button>${
     t.photo && !t.done
       ? `<span class="photo-indicator">${icon("camera")}</span>`
@@ -956,9 +852,7 @@ function goals() {
               "edit"
             )}</button></div><h2>${esc(
               g.title
-            )}</h2>${goalMeta(g, associated)}<button class="button secondary" data-action="goal-steps" data-id="${
-              g.id
-            }">${icon("spark")} Ask George for next steps</button>${
+            )}</h2>${goalMeta(g, associated)}${
               associated.length
                 ? `<details><summary>See today’s steps</summary>${associated
                     .map(
@@ -984,10 +878,10 @@ function chat() {
     s.tone === "direct"
       ? "Let’s choose one useful step. What needs your attention?"
       : s.tone === "gentle"
-      ? "Hey, I’m here. We can make a big thing feel a little smaller."
+      ? "Hey, I’m here. We can make a big thing feel smaller."
       : "Hey, " +
         esc(s.profile.name) +
-        ". A little stuck, or just need a nudge? Let’s figure it out."
+        ". Feeling stuck, or just need a nudge? Let’s figure it out."
   )}${s.messages
     .map((m) =>
       m.role === "user"
@@ -1025,19 +919,21 @@ function chat() {
           )
           .join("")}</div>`
       : ""
-  }</div><div class="chips"><button data-action="chat-prompt" data-value="Help me break down my goal">Break down my goal</button><button data-action="chat-prompt" data-value="I’m feeling overwhelmed">I’m overwhelmed</button><button data-action="chat-prompt" data-value="Give me a little motivation">A little motivation</button></div><form class="composer" data-form="chat"><input name="message" aria-label="Message George" value="${esc(
+  }</div><div class="chips"><button data-action="chat-prompt" data-value="Help me break down my goal">Break down my goal</button><button data-action="chat-prompt" data-value="I’m feeling overwhelmed">I’m overwhelmed</button><button data-action="chat-prompt" data-value="Give me some motivation">Some motivation</button></div><form class="composer" data-form="chat"><input name="message" aria-label="Message George" value="${esc(
     chatDraft
   )}" placeholder="What’s on your mind?" maxlength="1000"><button aria-label="Send message" ${
     chatBusy ? "disabled" : ""
   }>${icon("send")}</button></form></section>${navigation("chat")}`;
 }
-function settings() {
-  return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>A little more you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">
-  ${s.profile.avatar
+// The profile photo if there is one, otherwise the first initial.
+// Used on both Today and Settings so they always show the same picture.
+function profileFace() {
+  return s.profile.avatar
     ? `<img src="${esc(s.profile.avatar)}" alt="Profile picture" class="profile-avatar">`
-    : esc(s.profile.name[0]?.toUpperCase() || "?")
-  }
-</span><div><b>${esc(s.profile.name)}</b><small>${esc(
+    : esc((s.profile.name || "friend")[0]?.toUpperCase() || "?");
+}
+function settings() {
+  return `<section class="page"><span class="section-label">MAKE IT YOURS</span><h1>More you<span class="blue">.</span></h1><div class="profile-card"><span class="profile-circle">${profileFace()}</span><div><b>${esc(s.profile.name)}</b><small>${esc(
     s.profile.phone
   )}</small></div><button class="text-link profile-edit" data-action="profile" aria-label="Edit profile">Edit ${icon(
     "edit"
@@ -1046,7 +942,7 @@ function settings() {
   <input type="file" id="avatar-upload" accept="image/png,image/jpeg,image/webp" style="display:none;">
   <span>Change Photo</span>
 </label>
-  </div><p class="section-label">YOUR DAILY RHYTHM</p>${[
+  </div>${[
     [
       "apps",
       "lock",
@@ -1059,7 +955,6 @@ function settings() {
       "Earned breaks",
       s.requestedBreaks + " preferred · 10 minutes each",
     ],
-    ["tone", "chat", "George’s encouragement", tones[s.tone].label],
     [
       "calendar",
       "calendar",
@@ -1070,40 +965,21 @@ function settings() {
     ],
   ]
     .map(
-      ([page, i, title, sub]) =>
-        `<button class="setting-row" data-action="settings-page" data-to="${page}">${icon(
-          i
-        )}<span><b>${title}</b><small>${sub}</small></span><span>›</span></button>`
+      ([page, , title, sub]) =>
+        `<button class="setting-row" data-action="settings-page" data-to="${page}"><span><b>${title}</b><small>${sub}</small></span><span>›</span></button>`
     )
     .join(
       ""
-    )}<button class="setting-row" data-action="instagram-setup">${icon("phone")}<span><b>App shortcuts</b><small>Set up your iPhone reminder</small></span><span>›</span></button>
-    <button class="setting-row" data-action="reminders-setup">${icon("clock")}<span><b>Daily reminder</b><small>${reminderSummary()}</small></span><span>›</span></button>
+    )}<button class="setting-row" data-action="instagram-setup"><span><b>App shortcuts</b><small>Set up your iPhone reminder</small></span><span>›</span></button>
+    <button class="setting-row" data-action="reminders-setup"><span><b>Daily reminder</b><small>${reminderSummary()}</small></span><span>›</span></button>
 <button class="setting-row" data-action="share-app">
-  ${icon("send")}
   <span>
     <b>Share with Friends</b>
     <small>Invite someone to try First Things</small>
   </span>
   <span>›</span>
 </button>
-<button class="setting-row" data-action="copy-app-link">
-  ${icon("check")}
-  <span>
-    <b>Copy Link</b>
-    <small>Copy the app link to send anywhere</small>
-  </span>
-  <span>›</span>
-</button>
-<p class="section-label" style="margin-top:27px">EXPLORE THE PROTOTYPE</p><button class="setting-row" data-action="try-apps">${icon(
-    "phone"
-  )}<span><b>Try a distracting app</b><small>See why it’s paused or unlocked</small></span><span>›</span></button><button class="setting-row" data-action="lockscreen">${icon(
-    "lock"
-  )}<span><b>Lock-screen preview</b><small>A little reminder from George</small></span><span>›</span></button><button class="setting-row" data-action="demo">${icon(
-    "spark"
-  )}<span><b>Demo controls</b><small>Explore resets and recovery states</small></span><span>›</span></button><button class="setting-row" data-action="day-rules">${icon(
-    "clock"
-  )}<span><b>What happens at midnight?</b><small>Daily reset and prototype assumptions</small></span><span>›</span></button><button class="setting-row" data-install>${icon("phone")}<span><b>Install First Things</b><small>Add to your Home Screen</small></span><span>›</span></button><button class="setting-row" data-action="sign-out">${icon("back")}<span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button><p class="privacy-note">Tasks are saved on this device and sync when you’re online with the app open. Demo phone accounts do not use verification.<br>AI, calendars, and photos are simulated. The optional Instagram shortcut redirects you; it does not enforce an iOS app lock.</p></section>${navigation(
+<button class="setting-row" data-action="sign-out"><span><b>Sign out / switch account</b><small>Your saved tasks stay on this device</small></span><span>›</span></button></section>${navigation(
     "settings"
   )}`;
 }
@@ -1172,7 +1048,7 @@ function remindersModal(message = "") {
       <label class="field"><span>Remind me at</span><input type="time" id="reminder-time" value="${esc(prefs.time)}" required></label>
       ${prefs.on ? btn("Save time", "reminders-enable") + btn("Turn off reminders", "reminders-disable", "secondary") : btn("Turn on reminders", "reminders-enable")}
       <p class="small muted">${prefs.on ? "Reminders are on for this phone." : "You’ll be asked to allow notifications."} Keep First Things open until All changes synced shows, so the reminder counts your latest tasks.</p>`;
-  openModal("A little reminder.", `${body}<p id="reminder-result" class="small" role="status">${esc(message)}</p>`);
+  openModal("A quick reminder.", `${body}<p id="reminder-result" class="small" role="status">${esc(message)}</p>`);
 }
 async function remindersEnable() {
   const time = document.querySelector("#reminder-time")?.value;
@@ -1344,9 +1220,9 @@ function locked() {
       ? s.tone === "direct"
         ? "You chose to make this time count. Pick one task and get started."
         : s.tone === "gentle"
-        ? "Your feed will be here later. Let’s give one small thing a little care first."
-        : "A small step now, a little scroll later. You’ve got this."
-      : "Enjoy a little time for yourself. You’re in control."
+        ? "Your feed will be here later. Let’s give one small thing some care first."
+        : "A small step now, a scroll later. You’ve got this."
+      : "Enjoy some time for yourself. You’re in control."
   )}<div class="bottom-actions">${
     isBlocked
       ? `${btn("Back to my first things", "nav", "", 'data-to="home"')}${
@@ -1415,7 +1291,7 @@ function taskEditor(id = "", kind = "task") {
   };
   taskDraft = { id, kind };
   openModal(
-    id ? "A little adjustment." : "A little first thing.",
+    id ? "A quick adjustment." : "A new first thing.",
     `<form data-form="task" novalidate><label class="field"><span>What do you want to do?</span><input name="title" value="${esc(
       t.title
     )}" placeholder="Read, tidy up, call home…" maxlength="180" autofocus></label><p class="small muted">A title is enough. Make it yours.</p><div class="two-fields"><label class="field"><span>Minutes <em>optional</em></span><input name="duration" type="number" min="1" max="1440" placeholder="e.g. 15" value="${esc(
@@ -1492,10 +1368,10 @@ function completion(t, earned = [], support = false) {
   render();
   const prefix =
     s.tone === "gentle"
-      ? "That’s a lovely little step."
+      ? "That’s a lovely step."
       : s.tone === "direct"
       ? "Done. Nice follow-through."
-      : "A little win looks good on you!";
+      : "A win looks good on you!";
   toast(
     `${prefix} “${t.title}” is complete.${
       earned.length ? " You earned a 10-minute break!" : ""
@@ -1525,8 +1401,8 @@ function celebrate(extra = "") {
       s.tone === "direct"
         ? "You followed through. Enjoy the time you earned."
         : s.tone === "gentle"
-        ? "Look at all those little steps. You deserve to feel good about this."
-        : "You showed up for yourself. That’s a pretty big little win."
+        ? "Look at all those steps. You deserve to feel good about this."
+        : "You showed up for yourself. That’s a pretty big win."
     }</p>${
       extra ? `<div class="info-note">${esc(extra)}</div>` : ""
     }<div class="success-note">${st.done} of ${
@@ -1541,7 +1417,7 @@ function photoDialog(id) {
   photoTask = id;
   const t = s.tasks.find((t) => t.id === id);
   openModal(
-    "Show your little win.",
+    "Show your win.",
     `<p class="small muted">${esc(t.title)}</p><div class="photo-preview">${
       photo
         ? `<img src="${photo}" alt="Photo selected for review">`
@@ -1606,7 +1482,7 @@ function rules() {
 }
 function tryApps() {
   openModal(
-    "Try a little scroll.",
+    "Try a quick scroll.",
     `<p class="small muted">Tap an app to see its current access. This is a simulation.</p>${apps
       .map(
         (a) =>
@@ -1691,13 +1567,13 @@ function respond(text, retry = false) {
           ? "Make the task smaller. Pick one thing you can do in five minutes, then reassess."
           : s.tone === "gentle"
           ? "You don’t have to carry the whole day at once. Take a breath; we can choose a five-minute start."
-          : "Let’s turn the volume down a little. One small task, then a pause to see how you feel.";
+          : "Let’s turn the volume down. One small task, then a pause to see how you feel.";
     else if (/motiv|encourag/i.test(text))
       response =
         s.tone === "direct"
           ? "Your next move doesn’t need to be impressive. It needs to be small enough to start. Pick your first unfinished task."
           : s.tone === "gentle"
-          ? "A slow start is still a start. You’re allowed to take this one little thing at a time."
+          ? "A slow start is still a start. You’re allowed to take this one thing at a time."
           : "You don’t need a perfect day to make progress. Your next small win is right there.";
     else {
       response = `${
@@ -1709,7 +1585,7 @@ function respond(text, retry = false) {
       } ${
         g
           ? `For “${g.title},” here are a couple of small steps.`
-          : "Here are two little steps you could try."
+          : "Here are two small steps you could try."
       } ${
         s.answers[2]
           ? `You mentioned “${s.answers[2]}” — keep the first step short.`
@@ -1721,10 +1597,7 @@ function respond(text, retry = false) {
     render();
   }, 850);
 }
-function completeOnboarding(approve) {
-  if (approve)
-    for (const t of s.suggestions.filter((t) => t.selected)) addTask(s, t);
-  s.suggestions = [];
+function completeOnboarding() {
   s.onboarded = true;
   rememberLogin();
   go("home");
@@ -1786,22 +1659,12 @@ document.addEventListener("click", async (e) => {
       go(el.dataset.to);
       break;
     case "back": {
-      if (!s.onboarded && s.screen === "tone") { signOut(); break; }
+      if (!s.onboarded && (s.screen === "firstTask" || s.screen === "tone")) { signOut(); break; }
       if (s.onboarded) {
         go("settings");
         break;
       }
-      const steps = [
-        "welcome",
-        "tone",
-        "conversation",
-        "firstGoal",
-        "calendar",
-        "apps",
-        "breaks",
-        "tutorial",
-        "suggestions",
-      ];
+      const steps = ["firstTask", "firstGoal", "calendar", "apps", "breaks"];
       go(steps[Math.max(0, steps.indexOf(s.screen) - 1)]);
       break;
     }
@@ -1813,13 +1676,12 @@ document.addEventListener("click", async (e) => {
       render();
       break;
     case "tone-next":
-      go(s.onboarded ? "settings" : "conversation");
+      go(s.onboarded ? "settings" : "firstTask");
       break;
-    case "answer":
-      s.answers.push(v);
-      render();
+    case "task-example":
+      document.querySelector("[name=title]").value = v;
       break;
-    case "first-goal":
+    case "first-task-next":
       go("firstGoal");
       break;
     case "goal-example":
@@ -1866,28 +1728,8 @@ document.addEventListener("click", async (e) => {
       render();
       break;
     case "breaks-next":
-      go(s.onboarded ? "settings" : "tutorial");
-      break;
-    case "practice":
-      if (!s.tutorial) {
-        s.tutorial = true;
-        render();
-        toast("“Take one slow breath” — nicely done. Practice only!");
-      }
-      break;
-    case "tutorial-next":
-      s.suggestions = suggest(s);
-      go("suggestions");
-      break;
-    case "edit-suggestion":
-      taskEditor(id, "suggestion");
-      break;
-    case "approve-onboarding":
-      completeOnboarding(true);
-      break;
-    case "own-tasks":
-      completeOnboarding(false);
-      taskEditor();
+      if (s.onboarded) go("settings");
+      else completeOnboarding();
       break;
     case "new-task":
       taskEditor();
@@ -2011,7 +1853,7 @@ document.addEventListener("click", async (e) => {
     }
     case "profile":
       openModal(
-        "A little about you.",
+        "About you.",
         `<form data-form="profile" novalidate><label class="field"><span>Name</span><input name="name" value="${esc(
           s.profile.name
         )}" maxlength="40"></label><label class="field"><span>Phone number</span><input type="tel" name="phone" value="${esc(
@@ -2308,15 +2150,26 @@ document.addEventListener("submit", async (e) => {
       syncAccounts();
       break;
     }
-    case "answer": {
-      const value = values.answer.trim();
-      if (value) {
-        s.answers.push(value);
-        render();
-      } else
-        toast(
-          "A quick reply is all we need. You can use one of the suggestions."
-        );
+    case "first-task": {
+      const data = { title: values.title, duration: values.duration };
+      if (!data.title.trim()) {
+        fail("Give your task a name. A few words are enough.");
+        break;
+      }
+      if (
+        data.duration &&
+        (!Number.isFinite(+data.duration) || +data.duration < 1 || +data.duration > 1440)
+      ) {
+        fail("Choose a duration from 1 to 1,440 minutes, or leave it blank.");
+        break;
+      }
+      try {
+        addTask(s, data);
+      } catch (err) {
+        fail(err.message);
+        break;
+      }
+      render();
       break;
     }
     case "first-goal": {

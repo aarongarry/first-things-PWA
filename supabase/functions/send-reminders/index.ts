@@ -27,7 +27,7 @@ Deno.serve(async (request) => {
     const left = row.remaining as number;
     const payload = JSON.stringify({
       title: "First Things",
-      body: `${left} first thing${left === 1 ? "" : "s"} left. A small step now, a little freedom later.`,
+      body: `${left} first thing${left === 1 ? "" : "s"} left. A small step now, more freedom later.`,
     });
     try {
       await webpush.sendNotification(
