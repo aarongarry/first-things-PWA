@@ -163,8 +163,6 @@ Because an account's saved state only holds the current day, `supabase/okr-repor
 
 **Optional integration:** an Apple Shortcuts Instagram reminder uses real synced task/break status, after manual setup on each iPhone.
 
-**Simulated:** the in-app blocking preview, George AI, calendar connection, photo verification, and lock-screen notifications. A PWA cannot enforce a native iPhone app lock.
-
 ## Data Flow Diagram (Level 1)
 
 ![First Things Level 1 Data Flow Diagram](docs/dfd.png)
