@@ -833,3 +833,11 @@ nav { border-top: 0; background-image: var(--squiggle); background-repeat: repea
   .phone::before { top: env(safe-area-inset-top, 0px); }
   .nav-slot .nav { padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px)); background-color: var(--paper); }
 }
+
+/* Desktop only: the page background (html) was still the old light blue from
+   styles.css, which showed as a pale bar above the desk-colored body's top
+   margin. Paint the whole page the same desk color as body. Phones are
+   unaffected because their own html/body rule applies at 650px and below. */
+@media (min-width: 651px) {
+  :root { background: #dedad0; }
+}
