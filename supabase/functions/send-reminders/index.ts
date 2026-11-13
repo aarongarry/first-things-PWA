@@ -1,5 +1,5 @@
 // Sends the daily "you still have first things left" push notifications.
-// Run every 5 minutes by Supabase Cron (see README → Task reminders).
+// Run every minute by Supabase Cron (see README → Task reminders).
 import webpush from "npm:web-push@3.6.7";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
@@ -25,9 +25,10 @@ Deno.serve(async (request) => {
   const dead: string[] = [];
   await Promise.all((data ?? []).map(async (row: any) => {
     const left = row.remaining as number;
+    // Personal and short: the user's name, then how many tasks are left today.
     const payload = JSON.stringify({
-      title: "First Things",
-      body: `${left} first thing${left === 1 ? "" : "s"} left. A small step now, more freedom later.`,
+      title: String(row.name || "Friend"),
+      body: `${left} task${left === 1 ? "" : "s"} left today`,
     });
     try {
       await webpush.sendNotification(
