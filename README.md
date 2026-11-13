@@ -165,6 +165,16 @@ Because an account's saved state only holds the current day, `supabase/okr-repor
 
 **Simulated:** the in-app blocking preview, George AI, calendar connection, photo verification, and lock-screen notifications. A PWA cannot enforce a native iPhone app lock.
 
+## Data Flow Diagram (Level 1)
+
+![First Things Level 1 Data Flow Diagram](docs/dfd.png)
+
+The diagram shows the six main processes inside First Things, the outside services it talks to, and the data stores behind it.
+
+- **External entities:** the User, Google Calendar, the Anthropic API, the Web Push Service, and Apple Shortcuts.
+- **Processes:** 1.0 Manage Profile and Goals, 2.0 Manage Daily Tasks, 3.0 Verify Task Photo, 4.0 Sync Calendar Events, 5.0 Send Task Reminders, and 6.0 Report App Status.
+- **Data stores:** D1 Accounts, D2 Activity Log, D3 Photo Check Counts, D4 Calendar Connections, and D5 Reminder Subscriptions.
+
 ## Development
 
 The frontend is plain HTML/CSS/JavaScript in `docs/`, with no build step or runtime package dependencies.
