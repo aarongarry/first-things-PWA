@@ -40,6 +40,13 @@ function remember(value, storage = globalThis.localStorage) {
   try { storage.setItem(STORAGE_KEY, JSON.stringify(value)); } catch { /* best effort */ }
 }
 
+// True when a subscription was made with this app's current public key (or the browser doesn't say).
+export function sameKey(buffer, key) {
+  if (!buffer) return true;
+  const a = new Uint8Array(buffer), b = urlBase64ToUint8Array(key);
+  return a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
 // Call straight from a tap: iPhones only show the permission prompt for a direct user action.
 export async function enableReminders({ cloud, phone, time, beforeSave = async () => {} }) {
   if (!validTime(time)) throw Error('Pick a time for your reminder.');
@@ -49,6 +56,11 @@ export async function enableReminders({ cloud, phone, time, beforeSave = async (
     throw Error('Notifications are turned off for First Things. Allow them in your phone’s settings, then try again.');
   const registration = await navigator.serviceWorker.ready;
   let subscription = await registration.pushManager.getSubscription();
+  // A registration made with an older key can never receive our notifications. Replace it.
+  if (subscription && !sameKey(subscription.options?.applicationServerKey, VAPID_PUBLIC_KEY)) {
+    try { await subscription.unsubscribe(); } catch { /* replaced below either way */ }
+    subscription = null;
+  }
   if (!subscription) subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true, applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
   });

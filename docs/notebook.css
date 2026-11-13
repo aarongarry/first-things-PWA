@@ -841,3 +841,18 @@ nav { border-top: 0; background-image: var(--squiggle); background-repeat: repea
 @media (min-width: 651px) {
   :root { background: #dedad0; }
 }
+
+/* Pop-ups never scroll sideways: everything inside fits the width, long words wrap. */
+dialog { overflow-x: hidden; touch-action: pan-y; }
+dialog * { max-width: 100%; box-sizing: border-box; }
+dialog p, dialog li, dialog label { overflow-wrap: anywhere; }
+/* iPhone Safari gives time pickers a fixed minimum width that ignores their box; reset it. */
+dialog input[type="time"] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  text-align: left;
+}
+dialog input[type="time"]::-webkit-date-and-time-value { text-align: left; }
