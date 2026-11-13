@@ -10,7 +10,7 @@ export const SUPABASE_URL = "https://fvvekwiatzivjyvppwmp.supabase.co";
 export const SUPABASE_KEY = "sb_publishable_mm0x3V2eBM_RjiiFZkVAXQ_h5iRVIkM";
 // Public key for task reminders (push notifications). Make one with: npx web-push generate-vapid-keys
 // Only the PUBLIC key goes here. Leave it empty to hide the reminders feature.
-export const VAPID_PUBLIC_KEY = "";
+export const VAPID_PUBLIC_KEY = "BLYiNEjAu9Mv_Zu6Qj19leCttg7IX1Z4QAfd2jyx1V8b_mzG4rW-2V2D3MPpQSnmwd-bYgENps9ofBP4V4IuU4Y";
 
 export const USE_SUPABASE = true;
 

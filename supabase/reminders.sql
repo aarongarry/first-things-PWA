@@ -56,10 +56,14 @@ end $$;
 
 -- Used by the send-reminders Edge Function (service role only): who is due right now?
 -- Due = it is past their reminder time (within 3 hours), nothing sent yet today, tasks still unfinished.
-create or replace function public.first_things_due_reminders()
-returns table(id uuid, endpoint text, p256dh text, auth text, remaining integer)
+-- Also returns the user's first name for the notification. Changing the returned columns
+-- means the old version has to be dropped first.
+drop function if exists public.first_things_due_reminders();
+create function public.first_things_due_reminders()
+returns table(id uuid, endpoint text, p256dh text, auth text, remaining integer, name text)
 language sql security definer set search_path = '' as $$
-  select s.id, s.endpoint, s.p256dh, s.auth, r.remaining
+  select s.id, s.endpoint, s.p256dh, s.auth, r.remaining,
+    coalesce(nullif(btrim(a.state->'profile'->>'name'), ''), 'Friend') as name
   from public.first_things_push_subscriptions s
   join public.first_things_demo_accounts a on a.identity_id = s.identity_id and not a.retired
   cross join lateral (
