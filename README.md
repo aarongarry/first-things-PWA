@@ -222,3 +222,29 @@ For a device smoke test:
 5. Sign out and use a different number; its task list should be separate.
 
 ![Original First Things ERD](docs/erd.png)
+
+
+## Data Flow Diagram (Level 0)
+
+```mermaid
+flowchart TB
+    User[User]
+    App["0 · First Things PWA"]
+    Calendar[Google Calendar]
+    Anthropic[Anthropic API]
+    Shortcuts[Apple Shortcuts]
+    Push[Web Push Service]
+
+    User -->|Profile and goals| App
+    User -->|Daily tasks and breaks| App
+    App -->|Progress| User
+    App -->|Reminders| User
+    App -->|Calendar request| Calendar
+    Calendar -->|Calendar information| App
+    App -->|Photos and context| Anthropic
+    Anthropic -->|Verification result| App
+    App -->|API call| Shortcuts
+    Shortcuts -->|Response or result| App
+    App -->|Time and reminder| Push
+    Push -->|Push delivery| App
+```
