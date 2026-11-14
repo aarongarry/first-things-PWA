@@ -704,7 +704,7 @@ function home() {
       : "No tasks yet."
   }</h2><span class="progress-detail">${allDone ? `${done.length} of ${s.tasks.length} complete · Enjoy your day.` : `${st.done} of ${st.total} tasks complete${reminderNote}`}</span></div><div class="progress-ring" style="--progress:${progress}%"><span><b>${progress}<small>%</small></b><em>complete</em></span></div><div class="progress-line" role="progressbar" aria-label="Today’s tasks" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><i style="width:${progress}%"></i></div></div>${s.selectedApps.length && st.remaining ? `<button class="access-strip ${
     st.blocked ? "" : "unlocked"
-  }" data-action="try-apps">${icon(st.blocked ? "lock" : "unlock")}<span><b>${
+  }" data-action="app-access">${icon(st.blocked ? "lock" : "unlock")}<span><b>${
     st.active
       ? "You’re on a break"
       : st.blocked
@@ -1472,7 +1472,7 @@ function demo() {
       "secondary"
     )}${
       s.onboarded
-        ? `${btn("Try a distracting app", "try-apps", "secondary")}${btn(
+        ? `${btn(
             "Finish the active break",
             "finish-break",
             "secondary",
@@ -1499,32 +1499,14 @@ function rules() {
     )}`
   );
 }
-function tryApps() {
-  openModal(
-    "Try a quick scroll.",
-    `<p class="small muted">Tap an app to see its current access. This is a simulation.</p>${apps
-      .map(
-        (a) =>
-          `<button class="app-choice" data-action="open-app" data-value="${
-            a.name
-          }"><span class="app-logo" style="background:${a.color}">${
-            `<img src="icons/apps/${a.name.toLowerCase()}.svg" alt="" width="28" height="28">`
-          }</span><span><b>${a.name}</b><small>${
-            stats(s).remaining &&
-            !stats(s).active &&
-            s.selectedApps.includes(a.name)
-              ? "Paused — first things are waiting"
-              : "Available"
-          }</small></span>${icon(
-            stats(s).remaining &&
-              !stats(s).active &&
-              s.selectedApps.includes(a.name)
-              ? "lock"
-              : "unlock"
-          )}</button>`
-      )
-      .join("")}`
-  );
+function appAccess() {
+  const st = stats(s);
+  const selected = apps.filter(app => s.selectedApps.includes(app.name));
+  openModal("App access", `<p>${st.blocked
+    ? "Configured iPhone shortcuts show a reminder while tasks are unfinished."
+    : "Configured iPhone shortcuts allow access right now."}</p>
+    ${selected.length ? `<ul class="rule-list">${selected.map(app => `<li>${esc(app.name)}</li>`).join("")}</ul>` : ""}
+    ${btn("Set up App shortcuts", "instagram-setup", "secondary")}`);
 }
 function breakDetail() {
   const st = stats(s);
@@ -1989,9 +1971,9 @@ document.addEventListener("click", async (e) => {
     case "break-detail":
       breakDetail();
       break;
-    case "try-apps":
+    case "app-access":
       if (stats(s).active) breakDetail();
-      else tryApps();
+      else appAccess();
       break;
     case "open-app":
       s.attemptedApp = v;
