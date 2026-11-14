@@ -200,7 +200,7 @@ function activateAccount(phone, name = "") {
     storageFailed = false;
   } catch { storageFailed = true; databaseStatus("storage"); }
   lastSnapshot = accountSnapshot(s);
-  s.screen = s.onboarded ? "home" : "firstTask";
+  s.screen = s.onboarded ? "home" : "firstGoal";
   rememberLogin();
 }
 function signOut() {
@@ -462,7 +462,7 @@ function render() {
     completed: completedPage,
   };
   // Older saved setup screens (the George quiz, practice task) now land on the first-task step.
-  root.innerHTML = (map[s.screen] || (activePhone && !s.onboarded ? firstTask : home))();
+  root.innerHTML = (map[s.screen] || (activePhone && !s.onboarded ? firstGoal : home))();
   const progressBar = root.querySelector(".progress-line");
   if (previousProgress !== undefined && previousProgress !== null && progressBar &&
       !window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
@@ -553,30 +553,29 @@ function tone() {
   );
 }
 function firstTask() {
-  return `<section class="page"><div class="step-top"><button class="back" data-action="edit-number">${icon("back")} Back</button><span>ONE QUICK STEP</span></div><h1>Add your first task</h1><p class="body-copy">You can add more anytime.</p>${bubble("I’m George. Tap a task’s checkbox when it’s done.")}<form data-form="first-task" novalidate><label class="field"><span>Your first task</span><input name="title" placeholder="Review one page of notes" maxlength="180" value="${esc(s.firstTaskDraft || "")}" autofocus></label>${error ? `<div class="error" role="alert">${esc(error)}</div>` : ""}<button class="button">Add task & start my day</button></form><p class="small muted">Calendar, app shortcuts, and break preferences are available later in Settings.</p></section>`;
+  return `<section class="page"><div class="step-top"><button class="back" data-action="first-task-next" data-to="firstGoal">${icon("back")} Back</button><span>STEP 2 OF 2</span></div><h1>Add your first task</h1><p class="body-copy">You can add more anytime.</p><form data-form="first-task" novalidate><label class="field"><span>Your first task</span><input name="title" placeholder="Review one page of notes" maxlength="180" value="${esc(s.firstTaskDraft || "")}" autofocus></label>${error ? `<div class="error" role="alert">${esc(error)}</div>` : ""}<button class="button">Add task & start my day</button></form><p class="small muted">Calendar, app shortcuts, and break preferences are available later in Settings.</p></section>`;
 }
 function georgeTip() {
   if (s.tutorial) return "";
   const finished = s.tasks.some(t => t.done);
   const text = finished
-    ? 'Calendar, app shortcuts, and break preferences are in Settings.'
+    ? 'You can set up reminders in Settings.'
     : 'Tap a checkbox to finish a task. Use + to add another.';
-  return `<aside class="george-tip" aria-label="Tip from George">${bubble(text)}<button class="text-link" data-action="dismiss-tip">${finished ? "Got it" : "Hide tips"}</button></aside>`;
+  return `<aside class="george-tip" aria-label="Tip from George">${bubble(text)}<button type="button" class="text-link" data-action="dismiss-tip">${finished ? "Got it" : "Hide tips"}</button></aside>`;
 }
 function firstGoal() {
   const g = s.goals[0];
-  return step(
-    "What matters<br>to you right now?",
-    "A goal is your bigger “why.” Your daily tasks will be the small steps that get you there.",
-    2,
-    `<form data-form="first-goal" novalidate><label class="field"><span>My bigger goal</span><textarea name="title" placeholder="Feel ready for my final exams" maxlength="180">${esc(
-      s.goalDraftTitle ?? g?.title ?? ""
-    )}</textarea></label><div class="chips"><button type="button" data-action="goal-example" data-value="Feel ready for my final exams">Be ready for finals</button><button type="button" data-action="goal-example" data-value="Build a consistent fitness routine">Move more</button></div><label class="field"><span>Target date</span><input type="date" min="${localDay()}" name="target" value="${
-      s.goalDraftTarget ?? g?.target ?? localDay(now(s) + 30 * 86400000)
-    }"></label><p class="small muted">A direction to work toward, not a deadline for every task. You can always change it.</p>${
-      error ? `<div class="error" role="alert">${esc(error)}</div>` : ""
-    }<button class="button">Save my first goal</button></form>`
-  );
+  return `<section class="page">
+    <div class="step-top"><button class="back" data-action="back">${icon("back")} Back</button><span>STEP 1 OF 2</span></div>
+    <h1>Choose a bigger goal</h1>
+    ${bubble("Hi, I’m George! First Things helps you take small steps toward your goals and earn breaks as you finish tasks.")}
+    <form data-form="first-goal" novalidate>
+      <label class="field"><span>My bigger goal</span><input name="title" placeholder="Feel ready for my final exams" maxlength="180" value="${esc(s.goalDraftTitle ?? g?.title ?? "")}"></label>
+      <label class="field"><span>Target date</span><input type="date" name="target" value="${esc(s.goalDraftTarget ?? g?.target ?? localDay(now(s) + 30 * 86400000))}"></label>
+      ${error ? `<div class="error" role="alert">${esc(error)}</div>` : ""}
+      <button class="button">Save goal & continue</button>
+    </form>
+  </section>`;
 }
 function calendar() {
   return step(
@@ -648,47 +647,20 @@ function appSelection() {
   );
 }
 function breakPrefs() {
-  const st = stats(s);
-  return step(
-    "Progress deserves<br>some breathing room.",
-    "Choose how many 10-minute breaks you’d like to earn. Start an earned break whenever you’re ready.",
-    5,
-    `<div class="break-hero">${icon(
-      "leaf"
-    )}<div class="counter"><button data-action="break-minus" aria-label="Fewer breaks" ${
-      s.requestedBreaks === 0 ? "disabled" : ""
-    }>−</button><div><strong>${s.requestedBreaks}</strong><span>break${
-      s.requestedBreaks === 1 ? "" : "s"
-    } a day</span></div><button data-action="break-plus" aria-label="More breaks" ${
-      s.requestedBreaks === 10 ? "disabled" : ""
-    }>+</button></div><span class="pill">10 MINUTES EACH</span></div><div class="info-note">${
-      s.requestedBreaks === 0
-        ? "No breaks — finish your list to unlock your apps."
-        : `For example, with 6 tasks and ${Math.min(
-            s.requestedBreaks,
-            6
-          )} break${
-            Math.min(s.requestedBreaks, 6) === 1 ? "" : "s"
-          }, you earn ${
-            s.requestedBreaks === 1 ? "a break" : "breaks"
-          } after task${s.requestedBreaks === 1 ? "" : "s"} ${Array.from(
-            { length: Math.min(s.requestedBreaks, 6) },
-            (_, i) =>
-              Math.ceil(((i + 1) * 6) / (Math.min(s.requestedBreaks, 6) + 1))
-          )
-            .filter((x) => x < 6)
-            .join(", ")}. Finishing all 6 fully unlocks your apps.`
-    }</div><p class="small muted">Your effective break count can’t exceed your task count. Milestones are evenly spaced and rounded up to whole tasks. Full completion always takes priority.</p>${
-      s.onboarded
-        ? `<div class="card small">Today: ${st.effective} planned break${
-            st.effective === 1 ? "" : "s"
-          } across ${
-            st.total
-          } tasks. Settings update future milestones immediately. Already earned breaks stay yours.</div>`
-        : ""
-    }`,
-    btn(s.onboarded ? "Done" : "Sounds good", "breaks-next")
-  );
+  return `<section class="page">
+    <div class="step-top"><button class="back" data-action="back">${icon("back")} Back</button></div>
+    <h1>Earned breaks</h1>
+    <p class="body-copy">Earn 10-minute breaks as you complete tasks on your daily list.</p>
+    <div class="card row spread break-preference">
+      <span>Breaks per day</span>
+      <div class="row">
+        <button class="icon-btn" data-action="break-minus" aria-label="Fewer breaks" ${s.requestedBreaks === 0 ? "disabled" : ""}>−</button>
+        <output aria-live="polite">${s.requestedBreaks}</output>
+        <button class="icon-btn" data-action="break-plus" aria-label="More breaks" ${s.requestedBreaks === 10 ? "disabled" : ""}>+</button>
+      </div>
+    </div>
+    <div class="bottom-actions">${btn("Done", "breaks-next")}</div>
+  </section>`;
 }
 function nextBreakText() {
   const st = stats(s);
@@ -1046,7 +1018,7 @@ let instagramConfig;
 async function instagramSetup(appName = "Instagram") {
   if (!apps.some(app => app.name === appName)) return;
   instagramConfig = null;
-  openModal("A pause before Instagram.", '<p>Connecting your synced account…</p>');
+  openModal(`A pause before ${appName}.`, '<p>Connecting your synced account…</p>');
   const version = modalVersion, phone = activePhone;
   try {
     if (!USE_SUPABASE || !navigator.onLine || legacyPhone || storageFailed) throw Error("Connect to the internet and try again.");
@@ -1060,7 +1032,7 @@ async function instagramSetup(appName = "Instagram") {
     if (version !== modalVersion || phone !== activePhone) return;
     instagramConfig = config;
     const field = (label, key) => `<label class="field"><span>${label}</span><textarea readonly rows="2" data-shortcut-value="${key}">${esc(config[key])}</textarea></label><button class="text-link" data-action="shortcut-copy" data-value="${key}">Copy ${label.toLowerCase()}</button>`;
-    openModal("A pause before ${esc(appName)}.", `<div class="chips">${apps.map(app => `<button data-action="instagram-setup" data-value="${app.name}">${app.name}</button>`).join("")}</div><p>When ${esc(appName)} opens, your shortcut checks your synced list. It leaves ${esc(appName)} open during a break or after your tasks are done. Otherwise, it opens a reminder.</p>
+    openModal(`A pause before ${appName}.`, `<div class="chips">${apps.map(app => `<button data-action="instagram-setup" data-value="${app.name}">${app.name}</button>`).join("")}</div><p>When ${esc(appName)} opens, your shortcut checks your synced list. It leaves ${esc(appName)} open during a break or after your tasks are done. Otherwise, it opens a reminder.</p>
       <p class="small muted"> Set up once on your iPhone · Can be disabled in Shortcuts</p>
       <button class="button" data-action="shortcut-check">Test my ${esc(appName)} check</button><p id="shortcut-result" role="status"></p>
       <details class="shortcut-guide"><summary>1. Create “Check First Things”</summary><ol>
@@ -1706,7 +1678,7 @@ document.addEventListener("click", async (e) => {
       go(el.dataset.to);
       break;
     case "back": {
-      if (!s.onboarded && (s.screen === "firstTask" || s.screen === "tone")) { signOut(); break; }
+      if (!s.onboarded && (s.screen === "firstGoal" || s.screen === "tone")) { signOut(); break; }
       if (s.onboarded) {
         go("settings");
         break;
@@ -1718,12 +1690,17 @@ document.addEventListener("click", async (e) => {
     case "edit-number":
       go("welcome");
       break;
+    case "dismiss-tip":
+      s.tutorial = true;
+      root.querySelector(".george-tip")?.remove();
+      persistAccount();
+      break;
     case "tone":
       s.tone = v;
       render();
       break;
     case "tone-next":
-      go(s.onboarded ? "settings" : "firstTask");
+      go(s.onboarded ? "settings" : "firstGoal");
       break;
     case "task-example":
       document.querySelector("[name=title]").value = v;
@@ -2013,7 +1990,8 @@ document.addEventListener("click", async (e) => {
       breakDetail();
       break;
     case "try-apps":
-      tryApps();
+      if (stats(s).active) breakDetail();
+      else tryApps();
       break;
     case "open-app":
       s.attemptedApp = v;
@@ -2206,7 +2184,7 @@ document.addEventListener("submit", async (e) => {
     case "first-task": {
       s.firstTaskDraft = values.title;
       if (!values.title.trim()) { fail("Enter a task name."); break; }
-      addTask(s, { title: values.title });
+      addTask(s, { title: values.title, goalId: s.goals[0]?.id });
       delete s.firstTaskDraft;
       s.suggestions = [];
       s.onboarded = true;
@@ -2219,23 +2197,21 @@ document.addEventListener("submit", async (e) => {
       s.goalDraftTitle = values.title;
       s.goalDraftTarget = values.target;
       if (!values.title.trim()) {
-        fail("Give your bigger goal a name. It can be simple.");
+        fail("Enter a goal name.");
         break;
       }
       if (!values.target) {
         fail("Choose a target date for your bigger goal.");
         break;
       }
-      s.goals = [
-        {
-          id: s.goals[0]?.id || uid(),
-          title: values.title.trim(),
-          target: values.target,
-          created: s.goals[0]?.created || localDay(now(s)),
-          stepsDone: s.goals[0]?.stepsDone || 0,
-        },
-      ];
-      go("calendar");
+      const title = values.title.trim();
+      const target = values.target;
+      if (s.goals[0]) {
+        Object.assign(s.goals[0], { title, target });
+      } else {
+        s.goals.push({ id: uid(), title, target, created: localDay(now(s)), stepsDone: 0 });
+      }
+      go("firstTask");
       break;
     }
     case "task": {

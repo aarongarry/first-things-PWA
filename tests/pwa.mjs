@@ -15,8 +15,10 @@ const cache = {
   } },
   async match(p) { return cached.get(new URL(typeof p==='string'?p:p.url,origin).href); },
 };
-vm.runInNewContext(await readFile(new URL('../docs/sw.js',import.meta.url),'utf8'),{
-  URL, Set, Request: class { constructor(path, options) { this.url = new URL(path, origin).href; this.cache = options.cache; } }, caches:{open:async()=>cache,keys:async()=>['other-app','first-things-shell-old','first-things-shell-v45'],delete:async key=>assert.equal(key,'first-things-shell-old')},
+const serviceWorker = await readFile(new URL('../docs/sw.js',import.meta.url),'utf8');
+const currentCache = serviceWorker.match(/const CACHE = '([^']+)'/)[1];
+vm.runInNewContext(serviceWorker,{
+  URL, Set, Request: class { constructor(path, options) { this.url = new URL(path, origin).href; this.cache = options.cache; } }, caches:{open:async()=>cache,keys:async()=>['other-app','first-things-shell-old',currentCache],delete:async key=>assert.equal(key,'first-things-shell-old')},
   fetch:()=>{throw Error('offline');},
   self:{registration:{scope:origin},clients:{claim:async()=>claims++},skipWaiting:()=>skipped++,addEventListener:(n,fn)=>handlers[n]=fn},
 });
