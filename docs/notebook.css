@@ -856,3 +856,18 @@ dialog input[type="time"] {
   text-align: left;
 }
 dialog input[type="time"]::-webkit-date-and-time-value { text-align: left; }
+
+/* Keep Safari’s native date picker within the form column. */
+.field input[type="date"] {
+  -webkit-appearance: none;
+  appearance: none;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  text-align: left;
+}
+
+.field input[type="date"]::-webkit-date-and-time-value {
+  min-height: 1em;
+  text-align: left;
+}
