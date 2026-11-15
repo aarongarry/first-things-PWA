@@ -16,7 +16,6 @@ import {
   urgencyRank,
   rollover,
   deleteGoal,
-  suggest,
 } from "./model.js";
 import { restoreLogin, saveLogin } from "./session.js";
 import { USE_SUPABASE, SUPABASE_URL, SUPABASE_KEY } from "./supabase-config.js";
@@ -40,10 +39,6 @@ let error = "",
   photoError = "",
   photoBusy = false,
   photoPreparing = false,
-  chatBusy = false,
-  chatError = false,
-  chatDraft = "",
-  pendingMessage = "",
   toastTimer,
   returnTo = "home",
   taskDraft = null,
@@ -252,7 +247,6 @@ const icons = {
   plus: '<path d="M12 5v14M5 12h14"/>',
   home: '<path d="m3 10 9-7 9 7v10H3z"/><path d="M9 20v-7h6v7"/>',
   goal: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><path d="m12 12 8-8"/>',
-  chat: '<path d="M21 11a9 9 0 0 1-9 9H4l-2 2v-10a9 9 0 1 1 19-1Z"/><path d="M7 11h10M7 15h6"/>',
 settings: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
   lock: '<rect x="5" y="10" width="14" height="11" rx="3"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3"/>',
   unlock:
@@ -362,7 +356,7 @@ function toast(message) {
 }
 function rememberLogin() {
   if (!saveLogin(s, loginStorage))
-    toast("Your browser couldn’t remember your login. You can still use the demo.");
+    toast("Your browser couldn’t remember your login. You can still use the app.");
 }
 function go(screen) {
   error = "";
@@ -468,10 +462,7 @@ function render() {
     home: home,
     goals: goals,
     progress: progressReport,
-    chat: chat,
     settings: settings,
-    locked: locked,
-    lockscreen: lockscreen,
     completed: completedPage,
   };
   // Older saved setup screens (the George quiz, practice task) now land on the first-task step.
@@ -494,8 +485,6 @@ function render() {
   }
   persistAccount();
   if (["calendar", "home", "settings"].includes(s.screen)) maybeLoadCalendar();
-  if (s.screen === "chat")
-    root.scrollTop = root.scrollHeight;
   document.querySelector("#phone-time").textContent = new Date(
     now(s)
   ).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
@@ -506,7 +495,7 @@ function render() {
 // Every screen change is saved as a browser history entry, so the phone's Back
 // gesture/button returns to the previous screen instead of leaving the app.
 const ONBOARDING_SCREENS = ["welcome", "firstTask", "firstGoal", "calendar", "apps", "breaks"];
-const MAIN_SCREENS = ["home", "goals", "progress", "chat", "settings", "locked", "lockscreen", "completed", "switchAccount"];
+const MAIN_SCREENS = ["home", "goals", "progress", "settings", "completed", "switchAccount"];
 function syncHistory() {
   if (history.state?.ft === s.screen) return; // already recorded (also true right after Back)
   // Keep the hidden Progress route in the address; every other screen uses the plain address.
@@ -988,60 +977,6 @@ function goals() {
     "plus"
   )} Add another goal</button></section>${navigation("goals")}`;
 }
-function chat() {
-  return `<section class="page chat-page"><div class="chat-header">${avatar()}<div><h1>George</h1><span>Your ${tones[
-    s.tone
-  ].label.toLowerCase()} first-things friend</span></div><span class="pill">DEMO AI</span></div><div class="chat-history">${bubble(
-    s.tone === "direct"
-      ? "Let’s choose one useful step. What needs your attention?"
-      : s.tone === "gentle"
-      ? "Hey, I’m here. We can make a big thing feel smaller."
-      : "Hey, " +
-        esc(s.profile.name) +
-        ". Feeling stuck, or just need a nudge? Let’s figure it out."
-  )}${s.messages
-    .map((m) =>
-      m.role === "user"
-        ? `<div class="user-bubble">${esc(m.text)}</div>`
-        : bubble(esc(m.text))
-    )
-    .join("")}${
-    chatBusy
-      ? bubble(
-          '<span class="typing">● ● ●</span> Thinking of a small next step…'
-        )
-      : ""
-  }${
-    chatError
-      ? `<div class="error">I couldn’t get a reply ready. Your message is safe.<button class="text-link" data-action="retry-chat">Try again</button></div>`
-      : ""
-  }${
-    s.chatSuggestions?.length
-      ? `<div class="chat-proposals"><p class="section-label">A FEW IDEAS — YOUR CHOICE</p>${s.chatSuggestions
-          .map(
-            (t) =>
-              `<div class="suggestion-card"><b>${esc(
-                t.title
-              )}</b><p class="small muted">${t.duration} min · ${esc(
-                t.why
-              )}</p><div class="row"><button class="button secondary compact" data-action="accept-chat-task" data-id="${
-                t.id
-              }">Add to today</button><button class="text-link" data-action="edit-chat-task" data-id="${
-                t.id
-              }">Adjust</button><button class="icon-btn" data-action="reject-chat-task" data-id="${
-                t.id
-              }" aria-label="Dismiss suggestion">${icon(
-                "close"
-              )}</button></div></div>`
-          )
-          .join("")}</div>`
-      : ""
-  }</div><div class="chips"><button data-action="chat-prompt" data-value="Help me break down my goal">Break down my goal</button><button data-action="chat-prompt" data-value="I’m feeling overwhelmed">I’m overwhelmed</button><button data-action="chat-prompt" data-value="Give me some motivation">Some motivation</button></div><form class="composer" data-form="chat"><input name="message" aria-label="Message George" value="${esc(
-    chatDraft
-  )}" placeholder="What’s on your mind?" maxlength="1000"><button aria-label="Send message" ${
-    chatBusy ? "disabled" : ""
-  }>${icon("send")}</button></form></section>${navigation("chat")}`;
-}
 // The profile photo if there is one, otherwise the first initial.
 // Used on both Today and Settings so they always show the same picture.
 function profileFace() {
@@ -1056,9 +991,9 @@ function settings() {
     "edit"
   )}</button>
   <label for="avatar-upload" class="text-link profile-upload">
-  <input type="file" id="avatar-upload" accept="image/png,image/jpeg,image/webp" style="display:none;">
-  <span>Change Photo</span>
-</label>
+  <input type="file" id="avatar-upload" accept="image/png,image/jpeg,image/webp" style="display:none;" aria-label="${s.profile.avatar ? "Change profile photo" : "Add profile photo"}">
+  <span>${s.profile.avatar ? "Change photo" : "Add photo"}</span>
+</label>${s.profile.avatar ? '<button class="text-link profile-remove" data-action="remove-avatar">Remove</button>' : ""}
   </div>${[
     [
       "apps",
@@ -1310,71 +1245,6 @@ function progressReport() {
     "progress"
   )}`;
 }
-function locked() {
-  const st = stats(s),
-    a = apps.find((a) => a.name === s.attemptedApp) || apps[0],
-    isBlocked = st.remaining && !st.active && s.selectedApps.includes(a.name);
-  return `<section class="page blocked-page"><button class="back" data-action="nav" data-to="home">${icon(
-    "back"
-  )} Today</button><span class="pill">SIMULATED APP EXPERIENCE</span><span class="big-app-logo" style="background:${
-    a.color
-  }">${a.short}</span><h1>${
-    isBlocked ? "First things first." : `Hello, ${a.name}.`
-  }</h1><p class="body-copy">${
-    isBlocked
-      ? `${a.name} is paused while you have ${st.remaining} unfinished task${
-          st.remaining === 1 ? "" : "s"
-        }.`
-      : `${a.name} is available ${
-          st.active
-            ? "during your break"
-            : !s.selectedApps.includes(a.name)
-            ? "because you haven’t restricted it"
-            : "because your daily list is complete or empty"
-        }.`
-  }</p>${bubble(
-    isBlocked
-      ? s.tone === "direct"
-        ? "You chose to make this time count. Pick one task and get started."
-        : s.tone === "gentle"
-        ? "Your feed will be here later. Let’s give one small thing some care first."
-        : "A small step now, a scroll later. You’ve got this."
-      : "Enjoy some time for yourself. You’re in control."
-  )}<div class="bottom-actions">${
-    isBlocked
-      ? `${btn("Back to my first things", "nav", "", 'data-to="home"')}${
-          st.banked
-            ? btn("Start an earned 10-minute break", "start-break", "secondary")
-            : ""
-        }${st.remaining ? btn("Tackle my next task", "tackle", "ghost") : ""}`
-      : `<div class="sim-feed"><div></div><b>${
-          st.active
-            ? "<span data-countdown></span> remaining"
-            : "You’re free to explore"
-        }</b><p>That’s the idea. In a real app, you’d be back in ${
-          a.name
-        }.</p></div>${
-          st.active ? btn("End break early", "end-break", "secondary") : ""
-        }${btn("Back to my day", "nav", "", 'data-to="home"')}`
-  }</div><p class="privacy-note">No real app was opened or blocked.</p></section>`;
-}
-function lockscreen() {
-  const st = stats(s);
-  return `<section class="page lockscreen"><button class="back" data-action="nav" data-to="settings">${icon(
-    "back"
-  )} Back to Settings</button><span class="lock-clock">${new Date(
-    now(s)
-  ).toLocaleTimeString("en-US", {
-    hour: "numeric",
-    minute: "2-digit",
-  })}</span><p>${today()}</p><div class="lock-widget"><div class="row">${avatar()}<b>first things.</b><span class="pill">PREVIEW</span></div><h2>${
-    st.remaining
-      ? `${st.remaining} small step${st.remaining === 1 ? "" : "s"} left.`
-      : "Your first things are done."
-  }</h2><p>${nextBreakText()}</p><button class="button" data-action="nav" data-to="home">${
-    st.remaining ? "Take my next step" : "See my day"
-  }</button></div><p class="privacy-note">A concept preview, inside this demo.<br>No access to your real lock screen.</p></section>`;
-}
 function openModal(title, body) {
   modalVersion++;
   modal.innerHTML = `<div class="modal-top"><h2>${title}</h2><button class="icon-btn" data-action="close-modal" aria-label="Close dialog">${icon(
@@ -1394,8 +1264,6 @@ function taskEditor(id = "", kind = "task") {
   const source =
     kind === "suggestion"
       ? s.suggestions
-      : kind === "chat"
-      ? s.chatSuggestions
       : s.tasks;
   const t = source?.find((x) => x.id === id) || {
     title: "",
@@ -1452,7 +1320,7 @@ function taskEditor(id = "", kind = "task") {
     }></label><label class="toggle-label"><span><b>Reminder only</b><small>Won’t pause apps or count toward earning breaks.</small></span><input type="checkbox" name="reminder" ${
       t.reminder ? "checked" : ""
     }></label><p class="small muted">This task goes on today’s list. Weekly repeats follow today’s weekday; monthly repeats follow the calendar day, or the last day in a shorter month.</p><div class="form-error" role="alert"></div><button class="button">${
-      kind === "chat" ? "Save suggestion" : id ? "Save changes" : "Add to today"
+      id ? "Save changes" : "Add to today"
     }</button>${
       id && kind === "task"
         ? `<button class="button danger" type="button" data-action="delete-task" data-id="${id}">Delete task${
@@ -1559,33 +1427,6 @@ function photoDialog(id) {
     }</p>`
   );
 }
-function demo() {
-  openModal(
-    "Explore the demo.",
-    `<p>Use a sample phone number to try the new-user journey. App blocking and integrations are demonstrations.</p><div class="stack">${btn(
-      "Open a ready-made day",
-      "sample-day",
-      "secondary"
-    )}${
-      s.onboarded
-        ? `${btn(
-            "Finish the active break",
-            "finish-break",
-            "secondary",
-            stats(s).active ? "" : "disabled"
-          )}${btn(
-            "Simulate next local midnight",
-            "midnight",
-            "secondary"
-          )}${btn("Fail George’s next reply", "fail-next-chat", "secondary")}`
-        : ""
-    }${btn(
-      "Restart the new-user journey",
-      "reset",
-      "danger"
-    )}</div><p class="small muted">Changes to tasks and daily progress also sync to this demo phone account.</p>`
-  );
-}
 function rules() {
   openModal(
     "A new day, a fresh start.",
@@ -1637,62 +1478,6 @@ function breakDetail() {
         : btn("Back to my day", "close-modal")
     }`
   );
-}
-function respond(text, retry = false) {
-  if (chatBusy) return;
-  chatDraft = "";
-  if (!retry) s.messages.push({ role: "user", text });
-  pendingMessage = text;
-  chatError = false;
-  chatBusy = true;
-  s.screen = "chat";
-  render();
-  setTimeout(() => {
-    chatBusy = false;
-    if (s.failNextChat) {
-      s.failNextChat = false;
-      chatError = true;
-      render();
-      return;
-    }
-    const g = s.goals.find((g) => g.id === s.chatGoal) || s.goals[0];
-    s.chatGoal = "";
-    let response;
-    if (/overwhelm|stress|hard|tired/i.test(text))
-      response =
-        s.tone === "direct"
-          ? "Make the task smaller. Pick one thing you can do in five minutes, then reassess."
-          : s.tone === "gentle"
-          ? "You don’t have to carry the whole day at once. Take a breath; we can choose a five-minute start."
-          : "Let’s turn the volume down. One small task, then a pause to see how you feel.";
-    else if (/motiv|encourag/i.test(text))
-      response =
-        s.tone === "direct"
-          ? "Your next move doesn’t need to be impressive. It needs to be small enough to start. Pick your first unfinished task."
-          : s.tone === "gentle"
-          ? "A slow start is still a start. You’re allowed to take this one thing at a time."
-          : "You don’t need a perfect day to make progress. Your next small win is right there.";
-    else {
-      response = `${
-        s.tone === "direct"
-          ? "Let’s make it actionable."
-          : s.tone === "gentle"
-          ? "We can take this gently."
-          : "Let’s find an easy place to start."
-      } ${
-        g
-          ? `For “${g.title},” here are a couple of small steps.`
-          : "Here are two small steps you could try."
-      } ${
-        s.answers[2]
-          ? `You mentioned “${s.answers[2]}” — keep the first step short.`
-          : ""
-      } Add only what works for you.`;
-      s.chatSuggestions = suggest(s, g).slice(0, 2);
-    }
-    s.messages.push({ role: "george", text: response });
-    render();
-  }, 850);
 }
 function completeOnboarding() {
   s.onboarded = true;
@@ -1900,6 +1685,19 @@ document.addEventListener("click", async (e) => {
     case "close-modal":
       closeModal();
       break;
+    case "remove-avatar": {
+      const previous = s.profile.avatar;
+      delete s.profile.avatar;
+      persistAccount();
+      if (storageFailed) {
+        s.profile.avatar = previous;
+        toast("Your picture couldn’t be removed. Free some device storage and try again.");
+        break;
+      }
+      render();
+      toast("Profile picture removed.");
+      break;
+    }
     case "celebrate":
       celebrate();
       break;
@@ -1918,35 +1716,6 @@ document.addEventListener("click", async (e) => {
       closeModal();
       render();
       toast("Goal removed. Its daily tasks are still yours.");
-      break;
-    case "goal-steps":
-      s.chatGoal = id;
-      go("chat");
-      respond(
-        "Help me find smaller steps for " +
-          s.goals.find((g) => g.id === id).title
-      );
-      break;
-    case "chat-prompt":
-      respond(v);
-      break;
-    case "retry-chat":
-      respond(pendingMessage, true);
-      break;
-    case "accept-chat-task": {
-      const t = s.chatSuggestions.find((t) => t.id === id);
-      addTask(s, t);
-      s.chatSuggestions = s.chatSuggestions.filter((t) => t.id !== id);
-      render();
-      toast("“" + t.title + "” added to today.");
-      break;
-    }
-    case "edit-chat-task":
-      taskEditor(id, "chat");
-      break;
-    case "reject-chat-task":
-      s.chatSuggestions = s.chatSuggestions.filter((t) => t.id !== id);
-      render();
       break;
     case "settings-page":
       go(el.dataset.to);
@@ -2092,11 +1861,6 @@ document.addEventListener("click", async (e) => {
       if (stats(s).active) breakDetail();
       else appAccess();
       break;
-    case "open-app":
-      s.attemptedApp = v;
-      closeModal();
-      go("locked");
-      break;
     case "tackle": {
       // Suggest the most urgent task that counts toward unlocking apps.
       const task = s.tasks
@@ -2106,82 +1870,8 @@ document.addEventListener("click", async (e) => {
       if (task) toast("A place to start: “" + task.title + "”");
       break;
     }
-    case "lockscreen":
-      go("lockscreen");
-      break;
     case "day-rules":
       rules();
-      break;
-    case "demo":
-      demo();
-      break;
-    case "finish-break":
-      s.activeUntil = 0;
-      closeModal();
-      render();
-      toast(
-        stats(s).remaining
-          ? "Break finished. Your selected apps are paused again."
-          : "Your apps are fully unlocked."
-      );
-      break;
-    case "midnight": {
-      const d = new Date(now(s));
-      d.setHours(24, 0, 1, 0);
-      s.timeOffset = d.getTime() - Date.now();
-      rollover(s);
-      closeModal();
-      go("home");
-      toast(
-        "A fresh day. Unfinished one-time tasks carried over; daily breaks reset."
-      );
-      break;
-    }
-    case "fail-next-chat":
-      s.failNextChat = true;
-      closeModal();
-      go("chat");
-      toast("Demo: George’s next reply will fail, with a retry option.");
-      break;
-    case "sample-day": {
-      if (USE_SUPABASE) { toast("Switch off Supabase in the config to use sample data."); break; }
-      s = initial();
-      s.onboarded = true;
-      s.loginVerified = true;
-      s.screen = "home";
-      s.profile = { name: "Alex", phone: "(555) 123-4567" };
-      rememberLogin();
-      s.answers = [
-        "I’m studying and working",
-        "Friends, music, and the gym",
-        "After class. I get pulled into scrolling.",
-      ];
-      s.goals = [
-        {
-          id: uid(),
-          title: "Feel ready for my final exams",
-          target: localDay(now(s) + 30 * 86400000),
-        },
-      ];
-      suggest(s).forEach((t) => addTask(s, t));
-      s.tasks[2].photo = true;
-      closeModal();
-      render();
-      toast("Meet Alex’s sample day. Four tasks, two possible breaks.");
-      break;
-    }
-    case "reset":
-      openModal(
-        "A fresh beginning?",
-        `<p>Sign out to try another number. This account’s tasks and pending changes stay saved on this device.</p>${btn(
-          "Sign out",
-          "confirm-reset",
-          "danger"
-        )}${btn("Keep my progress", "close-modal", "ghost")}`
-      );
-      break;
-    case "confirm-reset":
-      signOut();
       break;
   }
 });
@@ -2241,9 +1931,6 @@ if (e.target.id === "avatar-upload") {
     .finally(() => { input.value = ""; });
 }
 
-});
-document.addEventListener("input", (e) => {
-  if (e.target.name === "message") chatDraft = e.target.value;
 });
 document.addEventListener("submit", async (e) => {
   const form = e.target;
@@ -2323,9 +2010,8 @@ document.addEventListener("submit", async (e) => {
         fail("Choose a duration from 1 to 1,440 minutes, or leave it blank.");
         break;
       }
-      if (taskDraft.kind === "suggestion" || taskDraft.kind === "chat") {
-        const source =
-          taskDraft.kind === "chat" ? s.chatSuggestions : s.suggestions;
+      if (taskDraft.kind === "suggestion") {
+        const source = s.suggestions;
         Object.assign(
           source.find((t) => t.id === taskDraft.id),
           data
@@ -2400,9 +2086,6 @@ document.addEventListener("submit", async (e) => {
       }
       break;
     }
-    case "chat":
-      if (values.message.trim()) respond(values.message.trim());
-      break;
   }
 });
 modal.addEventListener("cancel", (e) => {
@@ -2514,7 +2197,7 @@ if (document.modelContext?.registerTool) {
     name: "read_daily_progress",
     title: "Read today’s progress",
     description:
-      "Read tasks, app access, and earned breaks in the First Things local demo.",
+      "Read tasks, app access, and earned breaks in First Things.",
     inputSchema: {
       type: "object",
       properties: {},
@@ -2536,7 +2219,7 @@ if (document.modelContext?.registerTool) {
     name: "add_daily_task",
     title: "Add a task for today",
     description:
-      "Add an approved task to today’s local demo list. Unfinished tasks pause selected apps unless a break is active.",
+      "Add an approved task to today’s list. Unfinished tasks pause selected apps unless a break is active.",
     inputSchema: {
       type: "object",
       properties: { title: { type: "string", minLength: 1, maxLength: 180 } },
