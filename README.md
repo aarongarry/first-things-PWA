@@ -1,6 +1,6 @@
 # First Things
 
-First Things is a PWA for the IS-401 Project Management course. Plan goals, finish daily tasks, and earn simulated breaks with George.
+First Things is a PWA for the IS-401 Project Management course. Plan goals, finish daily tasks, and earn breaks with George.
 
 ## Get it working on your phone
 
@@ -159,11 +159,36 @@ The Progress report shows our 2 Objectives and 4 Key Results. It is not in the b
 
 Because an account's saved state only holds the current day, `supabase/okr-report.sql` keeps one log row per person per day. Phone-number changes keep the same history.
 
-## What is real and what is simulated
+## What is real and what is optional
 
 **Real:** Home Screen installation, phone-number account lookup, persistent goals/tasks, offline editing, reconnect sync, live OKR Key Results, and responsive mobile layout.
 
 **Optional integrations:** an Apple Shortcuts Instagram reminder uses real synced task/break status, after manual setup on each iPhone. Google Calendar connects for real with read-only access, and photo checks use Claude Haiku 5.5 (see below).
+
+## Data Flow Diagram (Level 0)
+
+```mermaid
+flowchart TB
+    User[User]
+    App["0 · First Things PWA"]
+    Calendar[Google Calendar]
+    Anthropic[Anthropic API]
+    Shortcuts[Apple Shortcuts]
+    Push[Web Push Service]
+
+    User -->|Profile and goals| App
+    User -->|Daily tasks and breaks| App
+    App -->|Progress| User
+    App -->|Reminders| User
+    App -->|Calendar request| Calendar
+    Calendar -->|Calendar information| App
+    App -->|Photos and context| Anthropic
+    Anthropic -->|Verification result| App
+    Shortcuts -->|Status check request| App
+    App -->|Allow, pause or refresh decision| Shortcuts
+    App -->|Time and reminder| Push
+    Push -->|Push delivery| App
+```
 
 ## Data Flow Diagram (Level 1)
 
@@ -289,29 +314,3 @@ For a device smoke test:
 5. Sign out and use a different number; its task list should be separate.
 
 ![Original First Things ERD](docs/erd.png)
-
-
-## Data Flow Diagram (Level 0)
-
-```mermaid
-flowchart TB
-    User[User]
-    App["0 · First Things PWA"]
-    Calendar[Google Calendar]
-    Anthropic[Anthropic API]
-    Shortcuts[Apple Shortcuts]
-    Push[Web Push Service]
-
-    User -->|Profile and goals| App
-    User -->|Daily tasks and breaks| App
-    App -->|Progress| User
-    App -->|Reminders| User
-    App -->|Calendar request| Calendar
-    Calendar -->|Calendar information| App
-    App -->|Photos and context| Anthropic
-    Anthropic -->|Verification result| App
-    App -->|API call| Shortcuts
-    Shortcuts -->|Response or result| App
-    App -->|Time and reminder| Push
-    Push -->|Push delivery| App
-```
