@@ -1356,23 +1356,13 @@ function waveGeorge() {
   const george = card.querySelector(".george-wave");
   setTimeout(() => george?.remove(), 1600);
 }
-function completion(t, earned = [], support = false, note = "") {
+function completion(t, earned = [], note = "") {
   render();
   if (s.tasks.length && s.tasks.every(task => task.done)) waveGeorge();
   const check = [...root.querySelectorAll(".task-check")].find(button => button.dataset.id === t.id);
   check?.classList.add("just-completed");
   if (earned.length && stats(s).remaining) toast("10-minute break earned.");
   else if (note) toast(note);
-  else if (support) toast("Photo check unavailable. Task marked complete.");
-  if (support && stats(s).remaining)
-    openModal(
-      "I trust your effort.",
-      `${bubble(
-        "Three photo checks didn’t work out. That’s on the check, not on you. I’ve marked “" +
-          esc(t.title) +
-          "” complete so you can keep moving."
-      )}<p>${esc(nextBreakText())}</p>${btn("Keep going", "close-modal")}`
-    );
 }
 function celebrate(extra = "") {
   const st = stats(s);
@@ -1420,9 +1410,7 @@ function photoDialog(id) {
       photoBusy || photoPreparing || !photo ? "disabled" : ""
     )}<p class="privacy-note">${
       t.failures
-        ? `${t.failures} unsuccessful check${
-            t.failures === 1 ? "" : "s"
-          } so far. After three, George trusts your effort.`
+        ? "Take a clear photo that shows the task done."
         : "AI checks your photo once. It isn’t saved online; a small copy stays on this phone until midnight."
     }</p>`
   );
@@ -1664,6 +1652,7 @@ document.addEventListener("click", async (e) => {
       const t = s.tasks.find((t) => t.id === id);
       if (t.done) {
         t.done = false;
+        t.failures = 0; // a re-check starts over and needs a real photo again
         if (activePhone) forgetPhoto(loginStorage, activePhone, localDay(now(s)), t.id);
         const owner = s.goals.find((g) => g.id === t.goalId);
         if (owner && owner.stepsDone > 0) owner.stepsDone--;
@@ -1799,17 +1788,21 @@ document.addEventListener("click", async (e) => {
         break;
       }
       const before = stats(s).banked;
-      const outcome = result.fallback ? photoAttempt(s, taskId, 1) : photoAttempt(s, taskId, result.verdict === "fail" ? 0 : 1);
+      // Only a clear "pass" completes the task; "unsure" and "fail" ask for another photo.
+      // After three misses the task completes quietly (photoAttempt). That rule is
+      // deliberately never shown, so people keep taking real photos.
+      const outcome = result.fallback ? photoAttempt(s, taskId, 1) : photoAttempt(s, taskId, result.verdict === "pass" ? 1 : 0);
       if (outcome === "retry") {
         photo = null;
-        photoError = `${result.reason || "I couldn’t quite see the finished task."} ${t.failures} of 3 checks tried.`;
+        photoError = result.reason || "That photo doesn’t show the task yet. Try another one.";
         photoDialog(taskId);
         break;
       }
       if (phone) keepPhoto(loginStorage, phone, localDay(now(s)), taskId, taken.keep);
       photo = null;
       closeModal();
-      completion(t, stats(s).banked > before ? [1] : [], outcome === "supported", result.fallback ? result.message : result.reason);
+      // A quiet third-miss completion looks like any other: no reason, no rule.
+      completion(t, stats(s).banked > before ? [1] : [], result.fallback ? result.message : outcome === "verified" ? result.reason : "Task complete. Nice work.");
       break;
     }
     case "start-break":

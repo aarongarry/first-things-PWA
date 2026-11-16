@@ -251,7 +251,7 @@ npx supabase@latest functions deploy google-calendar --no-verify-jwt
 
 ## Photo verification
 
-A task with **Verify with a photo** turned on opens the camera when it is checked off. The photo is shrunk on the phone (1024 px), sent once to the `verify-photo` Supabase Edge Function, and checked by **Claude Haiku 5.5** (`claude-haiku-5-5`), which answers **pass**, **unsure** or **fail** with a one-line reason. Pass and unsure complete the task. Fail asks for another photo; after three fails, George trusts your effort and completes it anyway. Photo checks stay optional per task.
+A task with **Verify with a photo** turned on opens the camera when it is checked off. The photo is shrunk on the phone (1024 px), sent once to the `verify-photo` Supabase Edge Function, and checked by **Claude Haiku 5.5** (`claude-haiku-5-5`), which answers **pass**, **unsure** or **fail** with a one-line reason. Only **pass** completes the task. Unsure and fail show the reason and ask for another photo. After three misses the task completes quietly, so nobody gets stuck; the app deliberately never mentions this rule. If the check service is down or over its daily limit, the photo counts as proof. Photo checks stay optional per task.
 
 **Privacy.** Photos are never stored on a server. Each one goes to Anthropic once for the check. A small copy (320 px) stays in this browser until midnight and shows next to the finished task. Unchecking a task deletes its copy, and checking it again needs a new photo.
 
