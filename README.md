@@ -308,7 +308,7 @@ The landing page (`docs/index.html`) has a professional hero section with an ima
 
 | | |
 |---|---|
-| Website URL | `https://YOUR-CLOUDFRONT-DOMAIN.cloudfront.net` |
+| Website URL | https://admin-portal.d2cxh56c5kl7rh.amplifyapp.com |
 | E-mail | `ta@example.com` |
 | Password | `See canvas details` |
 
