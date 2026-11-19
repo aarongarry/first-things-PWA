@@ -1,0 +1,13 @@
+# AWS Amplify Hosting build settings.
+# The site is plain HTML/CSS/JS in docs/ (no build step), so we only tell Amplify
+# which folder to publish.
+version: 1
+frontend:
+  phases:
+    build:
+      commands:
+        - echo "Static site - nothing to build"
+  artifacts:
+    baseDirectory: docs
+    files:
+      - '**/*'

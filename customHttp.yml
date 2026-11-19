@@ -1,0 +1,20 @@
+# Extra HTTP headers for Amplify Hosting (read automatically from the repo root).
+# "no-cache" makes browsers re-check these files on every visit, so a new deploy
+# (especially a new service worker) is picked up quickly instead of staying stale.
+customHeaders:
+  - pattern: '/sw.js'
+    headers:
+      - key: 'Cache-Control'
+        value: 'no-cache'
+  - pattern: '/index.html'
+    headers:
+      - key: 'Cache-Control'
+        value: 'no-cache'
+  - pattern: '/app.html'
+    headers:
+      - key: 'Cache-Control'
+        value: 'no-cache'
+  - pattern: '/manifest.webmanifest'
+    headers:
+      - key: 'Cache-Control'
+        value: 'no-cache'
