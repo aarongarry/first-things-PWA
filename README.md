@@ -308,7 +308,7 @@ The landing page (`docs/index.html`) has a professional hero section with an ima
 
 | | |
 |---|---|
-| Website URL | `https://YOUR-CLOUDFRONT-DOMAIN.cloudfront.net` |
+| Website URL | https://admin-portal.d2cxh56c5kl7rh.amplifyapp.com |
 | E-mail | `ta@example.com` |
 | Password | `See canvas details` |
 
@@ -333,22 +333,21 @@ The landing page (`docs/index.html`) has a professional hero section with an ima
 4. Deploy the Edge Function: `npx supabase functions deploy admin-users`.
 5. Keep **Allow anonymous sign-ins** on, because the phone app still needs it.
 
-## Deploy to AWS (S3 + CloudFront)
+## Deploy to AWS (Amplify Hosting)
 
-The site is plain static files (the `docs/` folder) that talk to Supabase from the browser, so there is no server to run. CloudFront provides the HTTPS address that the PWA and its service worker require.
+The site is plain static files (the `docs/` folder) that talk to Supabase from the browser, so there is no server to run. AWS Amplify Hosting serves the files over HTTPS, which the PWA and its service worker require, and sets the file types correctly. `amplify.yml` tells it to publish `docs/`, and `customHttp.yml` stops browsers from caching the pages and service worker.
 
-1. **Create the bucket.** S3 → Create bucket (for example `first-things-yourname`, Region **us-east-2**). Leave **Block all public access ON**. CloudFront will read the bucket privately.
-2. **Upload the site.** Upload the *contents* of `docs/` (not the folder itself) so `index.html` is at the top of the bucket. With the AWS CLI: `aws s3 sync docs/ s3://YOUR-BUCKET --delete`.
-3. **Check content types.** `manifest.webmanifest` must be `application/manifest+json` and `.js` files `text/javascript`. If S3 guessed wrong: `aws s3 cp docs/manifest.webmanifest s3://YOUR-BUCKET/manifest.webmanifest --content-type application/manifest+json`.
-4. **Create the CloudFront distribution.**
-   - Origin: your S3 bucket (choose the bucket, not the website endpoint).
-   - Origin access: **Origin access control**, create one, then use **Copy policy** and paste it into the bucket's **Permissions → Bucket policy**.
-   - Default root object: `index.html`.
-   - Viewer protocol policy: **Redirect HTTP to HTTPS**.
-5. **Open the `https://xxxx.cloudfront.net` address.** You should see the landing page. The phone app is at `/app.html`.
-6. **After every update**, upload again and run an invalidation so visitors do not get stale files: `aws cloudfront create-invalidation --distribution-id YOUR-ID --paths "/*"`.
-7. **Google Calendar only:** add the CloudFront address to the `APP_ORIGINS` secret and to **Authorized JavaScript origins** in Google Cloud Console. (E-mail/password sign-in needs no redirect URL.)
-8. Put the final URL and the TA login in the table above, and test them in a private window.
+1. In the AWS Console, switch to the **us-east-2 (Ohio)** Region, open **AWS Amplify**, and choose **Create new app**.
+2. Choose **GitHub**, authorize AWS, then pick this repository and the **main** branch. (Use the `admin-portal` branch first if you want to test before merging.)
+3. Amplify finds `amplify.yml` automatically. Accept the defaults and choose **Save and deploy**.
+4. Wait for Provision, Build and Deploy to turn green. The **Domain** shown is your address, like `https://main.xxxx.amplifyapp.com`. You should see the landing page, and the phone app is at `/app.html`.
+5. From then on, every push to that branch redeploys automatically.
+
+**If you cannot connect the repository** (it belongs to another GitHub account, for example): either fork it into your own account and connect the fork, or choose **Deploy without Git provider** and upload a `.zip` of the *contents* of `docs/` (so `index.html` is at the top of the zip). Upload a new zip after each change.
+
+**Google Calendar only:** add the Amplify address to the `APP_ORIGINS` secret and to **Authorized JavaScript origins** in Google Cloud Console. (E-mail/password sign-in needs no redirect URL.)
+
+Finally, put the live URL and the TA login in the table above and test them in a private window and on a phone.
 
 ## Publish
 
