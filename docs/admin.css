@@ -1,0 +1,35 @@
+/* admin.css - extra styles for admin.html (loaded after landing.css) */
+.admin-main { padding-top: 28px; padding-bottom: 60px; }
+.admin-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.tabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 8px 0 20px; }
+/* The active table's button looks filled in */
+.tabs [aria-current="page"] { background: var(--ink); color: #fff; }
+
+.message { background: #e8f5ee; color: var(--ok); border-radius: 10px; padding: 10px 14px; font-weight: 700; }
+.message.is-error { background: #fdecea; color: var(--danger); }
+
+.toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.toolbar h2 { margin: 0; }
+
+/* On narrow screens the table scrolls sideways instead of breaking the layout */
+.table-wrap { overflow-x: auto; background: #fff; border: 1px solid var(--line); border-radius: 14px; }
+table { border-collapse: collapse; width: 100%; min-width: 560px; }
+caption { text-align: left; padding: 12px 14px; color: var(--muted); }
+th, td { text-align: left; padding: 10px 14px; border-top: 1px solid var(--line); vertical-align: middle; }
+th { background: var(--paper-2); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em; }
+td.actions { white-space: nowrap; display: flex; gap: 8px; }
+.empty { padding: 24px; text-align: center; color: var(--muted); }
+
+dialog { border: 0; border-radius: 18px; width: min(460px, calc(100vw - 28px)); padding: 24px; color: var(--ink); background: var(--paper); box-shadow: 0 20px 80px rgba(20, 20, 30, 0.35); }
+dialog::backdrop { background: rgba(20, 20, 30, 0.45); }
+.field { margin-bottom: 8px; }
+.field .hint { color: var(--muted); font-size: 0.9rem; margin: 4px 0 0; }
+.field.check { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+.field.check input { width: 22px; min-height: 22px; }
+.field.check label { margin: 0; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+
+@media (max-width: 600px) {
+  .tabs .btn { flex: 1 1 100%; }
+  .dialog-actions .btn { flex: 1; }
+}

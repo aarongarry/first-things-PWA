@@ -2,15 +2,18 @@
 
 First Things is a PWA for the IS-401 Project Management course. Plan goals, finish daily tasks, and earn breaks with George.
 
+- **Landing page and admin sign-in:** `docs/index.html` (see [Admin portal](#admin-portal-maintain-users-goals-tasks)).
+- **The phone app itself:** `docs/app.html`.
+
 ## Get it working on your phone
 
-**Live app: [Open First Things](https://aarongarry.github.io/first-things-PWA/)**
+**Live app: [Open First Things](https://aarongarry.github.io/first-things-PWA/app.html)**
 
 First Things is a **Progressive Web App (PWA)**: a website you can add to your Home Screen. It opens in its own app window and caches the files it needs for offline use. You do **not** need to download the repository, run a local server, or install anything from the App Store to use the published app.
 
 ### iPhone — start here
 
-1. Open **[the live app](https://aarongarry.github.io/first-things-PWA/)** in **Safari** on your iPhone. If you opened the link inside another app, open it in Safari first.
+1. Open **[the live app](https://aarongarry.github.io/first-things-PWA/app.html)** in **Safari** on your iPhone. If you opened the link inside another app, open it in Safari first.
 2. Tap **Install First Things** on the welcome page for instructions. Already signed in? Find the same option under **Settings**.
 3. In Safari, tap **Share** (the square with an upward arrow). Depending on Safari’s layout, it may be inside the page menu.
 4. Scroll through the share options and tap **Add to Home Screen**. If it is missing, check **Edit Actions** at the bottom of the share sheet.
@@ -22,7 +25,7 @@ The install button displays instructions on iPhone; Safari requires you to finis
 
 ### Android
 
-1. Open [the live app](https://aarongarry.github.io/first-things-PWA/) in **Chrome**.
+1. Open [the live app](https://aarongarry.github.io/first-things-PWA/app.html) in **Chrome**.
 2. Tap **Install First Things** and accept the browser’s install prompt.
 3. If no prompt appears, use Chrome’s **⋮ → Install app** or **Add to Home screen**.
 4. Open the installed app while online, sign in with the same phone number, and wait for **All changes synced**.
@@ -137,7 +140,7 @@ How it behaves: a reminder goes out once per day, only within 3 hours after the 
 - First use on a new device needs internet to load an existing cloud account. An uncached number used offline can start locally and merge when connected.
 - Signing out keeps local accounts and pending edits. Clearing website data/removing app storage can erase changes that have not synced.
 - Independent task additions and field edits merge. For the same field, the device syncing its pending edit last wins. Deleting an item wins over a stale edit to it. Server revisions prevent a stale full snapshot from silently overwriting newer data.
-- The top status shows **All changes synced**, **Offline**, or a retryable problem. Routine messages (**Saved on this device**, **Syncing…**, **All changes synced**) appear as a small pill and fade after a couple of seconds; offline, errors, a changed phone number, and local-storage failures stay on screen as a banner until fixed. To keep the status visible all the time (for example while following the steps above or during a demo), add `?status=on` to the address, such as `.../index.html?status=on`. A local-storage failure is shown separately; keep the app open if that occurs.
+- The top status shows **All changes synced**, **Offline**, or a retryable problem. Routine messages (**Saved on this device**, **Syncing…**, **All changes synced**) appear as a small pill and fade after a couple of seconds; offline, errors, a changed phone number, and local-storage failures stay on screen as a banner until fixed. To keep the status visible all the time (for example while following the steps above or during a demo), add `?status=on` to the address, such as `.../app.html?status=on`. A local-storage failure is shown separately; keep the app open if that occurs.
 - App updates download a complete new shell and offer **New version ready**. Tapping it saves local changes before reloading. Account data is separate from the app cache.
 
 ## Task options and ending a break
@@ -148,7 +151,7 @@ How it behaves: a reminder goes out once per day, only within 3 hours after the 
 
 ## Progress report (OKR Key Results)
 
-The Progress report shows our 2 Objectives and 4 Key Results. It is not in the bottom navigation; open it by adding `#progress` to the app's address (for example `.../index.html#progress`) while signed in. None of the numbers are hard-coded: the database calculates them from real activity when the screen opens, after each sync, and every 10 seconds while it stays open, so what people do on their own phones moves the numbers.
+The Progress report shows our 2 Objectives and 4 Key Results. It is not in the bottom navigation; open it by adding `#progress` to the app's address (for example `.../app.html#progress`) while signed in. None of the numbers are hard-coded: the database calculates them from real activity when the screen opens, after each sync, and every 10 seconds while it stays open, so what people do on their own phones moves the numbers.
 
 | Objective | Key Result | Target | How it is calculated |
 |---|---|---|---|
@@ -296,6 +299,56 @@ npx supabase@latest functions deploy verify-photo --no-verify-jwt
 ```
 
 Never put the key in `docs/` or commit it; it lives only in Supabase secrets.
+
+## Admin portal (Maintain Users, Goals, Tasks)
+
+The landing page (`docs/index.html`) has a professional hero section with an image (George), a feature overview, and an **Admin sign in** form (`user_email`, `user_password`). Signing in reveals three buttons that were hidden before: **Maintain Users**, **Maintain Goals**, **Maintain Tasks**, plus **Log out**. Each button opens `docs/admin.html`, where the table can be **created, read, updated and deleted**. **Log out** removes the session cookies and hides the buttons again.
+
+**TA / grader login** (fill these in before submitting, then test them in a private window):
+
+| | |
+|---|---|
+| Website URL | `https://YOUR-CLOUDFRONT-DOMAIN.cloudfront.net` |
+| E-mail | `ta@example.com` |
+| Password | `See canvas details` |
+
+| Table | What you can do |
+|---|---|
+| Users (`user` + login e-mail) | Add a user with an e-mail and password, edit name/phone/e-mail/password, delete a user and everything they own |
+| Goals (`goal`) | Add, edit, delete (deleting a goal also deletes its tasks) |
+| Tasks (`task`) | Add, edit (including *requires photo* and *completed*), delete |
+
+### How the security works
+
+- Login uses **Supabase Auth** (e-mail and password). The session is stored in cookies (`docs/auth.js`), which Log out expires.
+- The hidden buttons are only for convenience. The real protection is in the database: every `admin_*` function in `supabase/admin.sql` first checks that the caller is a **real, non-anonymous user listed in `admin_users`**. Anyone else, including the anonymous visitors the phone app creates, gets an error. The tables themselves stay locked (RLS on, no direct access).
+- Creating or deleting a *login* needs the server-side service key, which must never be in browser code. That one job is done by the `admin-users` Edge Function (`supabase/functions/admin-users`), which first confirms the caller is an admin.
+- When an admin edits a goal or task, the owner's `data_version` goes up, so a phone that still has the old data is asked to reload instead of silently overwriting the change.
+
+### One-time setup
+
+1. In the Supabase **SQL Editor**, run `supabase/admin.sql` (after `supabase/setup.sql`). It is safe to run again.
+2. Create the TA account: **Authentication → Users → Add user → Create new user**, enter the e-mail and password, tick **Auto Confirm User**.
+3. Run the two `insert` statements at the bottom of `supabase/admin.sql` (with that e-mail) to make the account an admin and list it under Maintain Users.
+4. Deploy the Edge Function: `npx supabase functions deploy admin-users`.
+5. Keep **Allow anonymous sign-ins** on, because the phone app still needs it.
+
+## Deploy to AWS (S3 + CloudFront)
+
+The site is plain static files (the `docs/` folder) that talk to Supabase from the browser, so there is no server to run. CloudFront provides the HTTPS address that the PWA and its service worker require.
+
+1. **Create the bucket.** S3 → Create bucket (for example `first-things-yourname`, Region **us-east-2**). Leave **Block all public access ON**. CloudFront will read the bucket privately.
+2. **Upload the site.** Upload the *contents* of `docs/` (not the folder itself) so `index.html` is at the top of the bucket. With the AWS CLI: `aws s3 sync docs/ s3://YOUR-BUCKET --delete`.
+3. **Check content types.** `manifest.webmanifest` must be `application/manifest+json` and `.js` files `text/javascript`. If S3 guessed wrong: `aws s3 cp docs/manifest.webmanifest s3://YOUR-BUCKET/manifest.webmanifest --content-type application/manifest+json`.
+4. **Create the CloudFront distribution.**
+   - Origin: your S3 bucket (choose the bucket, not the website endpoint).
+   - Origin access: **Origin access control**, create one, then use **Copy policy** and paste it into the bucket's **Permissions → Bucket policy**.
+   - Default root object: `index.html`.
+   - Viewer protocol policy: **Redirect HTTP to HTTPS**.
+5. **Open the `https://xxxx.cloudfront.net` address.** You should see the landing page. The phone app is at `/app.html`.
+6. **After every update**, upload again and run an invalidation so visitors do not get stale files: `aws cloudfront create-invalidation --distribution-id YOUR-ID --paths "/*"`.
+7. **Google Calendar only:** add the CloudFront address to the `APP_ORIGINS` secret and to **Authorized JavaScript origins** in Google Cloud Console. (E-mail/password sign-in needs no redirect URL.)
+8. Put the final URL and the TA login in the table above, and test them in a private window.
 
 ## Publish
 

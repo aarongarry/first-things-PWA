@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<!--
+  Admin page: "Maintain Users", "Maintain Goals", "Maintain Tasks".
+  One page, three views, chosen by the address (#users, #goals, #tasks).
+  admin.js redirects to the landing page if nobody is signed in as an admin.
+  The table, the Add/Edit form and the Delete confirmation are built by admin.js.
+-->
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#fbf9f4" />
+    <title>Maintain records | First Things</title>
+    <meta name="robots" content="noindex" />
+    <link rel="icon" type="image/svg+xml" href="icons/icon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400..800&display=swap" />
+    <link rel="stylesheet" href="landing.css" />
+    <link rel="stylesheet" href="admin.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
+
+    <header class="site-header">
+      <a class="brand" href="./" aria-label="First Things home">
+        <span class="brand-mark" aria-hidden="true">✓</span>
+        <span class="brand-name">first things<span class="brand-dot">.</span></span>
+      </a>
+      <div class="admin-bar">
+        <span id="admin-email" class="muted"></span>
+        <a class="btn btn-ghost btn-small" href="./">Home</a>
+        <button id="logout-button" class="btn btn-small" type="button">Log out</button>
+      </div>
+    </header>
+
+    <main id="main" class="admin-main">
+      <h1>Maintain records</h1>
+
+      <!-- One button per table. admin.js marks the active one with aria-current. -->
+      <nav class="tabs" aria-label="Tables">
+        <a id="tab-users" class="btn btn-ghost" href="#users">Maintain Users</a>
+        <a id="tab-goals" class="btn btn-ghost" href="#goals">Maintain Goals</a>
+        <a id="tab-tasks" class="btn btn-ghost" href="#tasks">Maintain Tasks</a>
+      </nav>
+
+      <!-- Messages such as "Saved." (role="status" lets screen readers announce them) -->
+      <p id="message" class="message" role="status" hidden></p>
+
+      <section id="view" aria-live="polite" aria-busy="true">
+        <p class="muted">Loading…</p>
+      </section>
+    </main>
+
+    <!-- Add / Edit form (filled in by admin.js) -->
+    <dialog id="form-dialog" aria-labelledby="form-title">
+      <form id="record-form" novalidate>
+        <h2 id="form-title"></h2>
+        <div id="form-fields"></div>
+        <p id="form-error" class="form-error" role="alert" hidden></p>
+        <div class="dialog-actions">
+          <button id="form-cancel" class="btn btn-ghost" type="button">Cancel</button>
+          <button id="form-save" class="btn" type="submit">Save</button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Delete confirmation -->
+    <dialog id="delete-dialog" aria-labelledby="delete-title">
+      <h2 id="delete-title">Delete this record?</h2>
+      <p id="delete-text"></p>
+      <p id="delete-error" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button id="delete-cancel" class="btn btn-ghost" type="button">Cancel</button>
+        <button id="delete-confirm" class="btn btn-danger" type="button">Delete</button>
+      </div>
+    </dialog>
+
+    <script type="module" src="admin.js"></script>
+  </body>
+</html>

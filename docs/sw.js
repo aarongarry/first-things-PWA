@@ -1,7 +1,8 @@
 // Bump on every release that changes a shell asset. One version = one full shell.
-const CACHE = 'first-things-shell-v51';
+const CACHE = 'first-things-shell-v52';
 const ASSETS = [
-  './', './index.html', './styles.css', './notebook.css', './app.js', './model.js', './session.js',
+  // index.html is now the public landing page; app.html is the installable PWA itself.
+  './', './index.html', './app.html', './landing.css', './landing.js', './styles.css', './notebook.css', './app.js', './model.js', './session.js',
   './shortcut.js', './calendar.js', './photo.js', './offline.js', './cloud.js', './supabase-config.js', './pwa.js', './reminders.js',
   './notebook-binding.svg', './george-stick.svg', './george.png', './george-face.png', './manifest.webmanifest', './icons/icon-192.png',
   './icons/icon-512.png', './icons/apple-touch-icon.png', './icons/icon.svg',
@@ -22,7 +23,7 @@ self.addEventListener('push', event => {
   event.waitUntil(self.registration.showNotification(data.title || 'First Things', {
     body: data.body || 'You still have first things to finish.',
     icon: './icons/icon-192.png', badge: './icons/icon-192.png',
-    tag: 'first-things-daily', data: { url: './' },
+    tag: 'first-things-daily', data: { url: './app.html' },
   }));
 });
 self.addEventListener('notificationclick', event => {
@@ -30,7 +31,7 @@ self.addEventListener('notificationclick', event => {
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of windows) if ('focus' in client) return client.focus();
-    return self.clients.openWindow(event.notification.data?.url || './');
+    return self.clients.openWindow(event.notification.data?.url || './app.html');
   })());
 });
 self.addEventListener('message', event => {
@@ -44,7 +45,14 @@ self.addEventListener('fetch', event => {
   if (request.method !== 'GET' || url.origin !== scope.origin || !url.pathname.startsWith(scope.pathname)) return;
   const shell = new Set(ASSETS.map(path => new URL(path, scope).href));
   if (request.mode === 'navigate') {
-    event.respondWith(caches.open(CACHE).then(async cache => (await cache.match('./index.html')) || fetch(request)));
+    // Serve the cached copy of the page that was asked for (landing page or app).
+    // The admin pages are not cached: they need the network, so they fall through to fetch().
+    const page = url.pathname === scope.pathname ? './index.html'
+      : './' + url.pathname.slice(scope.pathname.length);
+    event.respondWith(caches.open(CACHE).then(async cache =>
+      (await cache.match(page)) ||
+      // Offline and not a cached page: fall back to the landing page instead of a browser error.
+      fetch(request).catch(() => cache.match('./index.html'))));
   } else if (shell.has(url.href)) {
     event.respondWith(caches.open(CACHE).then(async cache => (await cache.match(request)) || fetch(request)));
   }
