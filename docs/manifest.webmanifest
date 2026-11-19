@@ -4,7 +4,7 @@
   "short_name": "First Things",
   "description": "Your goals, daily tasks, and steady progress. Available offline.",
   "lang": "en",
-  "start_url": "./",
+  "start_url": "./app.html",
   "scope": "./",
   "display": "standalone",
   "background_color": "#faf7ef",

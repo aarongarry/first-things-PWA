@@ -2139,7 +2139,7 @@ if (s.loginVerified) {
   catch { s = initial(); rememberLogin(); }
 }
 // Hidden route: the Progress report is no longer in the navigation. Adding
-// #progress to the app's address (for example .../index.html#progress) opens it
+// #progress to the app's address (for example .../app.html#progress) opens it
 // for demos and grading. It only opens for a signed-in, onboarded user, so the
 // welcome and setup screens can't be skipped.
 function openHiddenReport() {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile, access } from 'node:fs/promises';
 import vm from 'node:vm';
 const manifest = JSON.parse(await readFile(new URL('../docs/manifest.webmanifest',import.meta.url),'utf8'));
-assert.equal(manifest.start_url,'./'); assert.equal(manifest.scope,'./'); assert.equal(manifest.display,'standalone');
+assert.equal(manifest.start_url,'./app.html'); assert.equal(manifest.scope,'./'); assert.equal(manifest.display,'standalone');
 for (const icon of manifest.icons) await access(new URL('../docs/'+icon.src,import.meta.url));
 const handlers = {}, cached = new Map(); let claims=0, skipped=0;
 const origin='https://example.test/first-things-PWA/';
@@ -26,7 +26,9 @@ let work; handlers.install({waitUntil:p=>work=p}); await work;
 handlers.activate({waitUntil:p=>work=p}); await work; assert.equal(claims,1);
 let response;
 handlers.fetch({request:{method:'GET',url:origin,mode:'navigate'},respondWith:p=>response=p});
-assert.equal((await response).asset,'./index.html');
+assert.equal((await response).asset,'./index.html'); // site root = landing page
+handlers.fetch({request:{method:'GET',url:origin+'app.html',mode:'navigate'},respondWith:p=>response=p});
+assert.equal((await response).asset,'./app.html'); // the app page is served from its own cache entry
 handlers.fetch({request:{method:'GET',url:origin+'offline.js',mode:'cors'},respondWith:p=>response=p});
 assert.equal((await response).asset,'./offline.js');
 let intercepted=false;

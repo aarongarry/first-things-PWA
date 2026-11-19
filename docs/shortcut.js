@@ -6,7 +6,9 @@ export function shortcutConfig(key, zone, pageURL, appName = "Instagram") {
   url.searchParams.set('app_name', appName);
   url.searchParams.set('access_key', key);
   url.searchParams.set('timezone_name', zone);
-  const reminder = new URL('./', pageURL);
+  // Keep the page path (app.html) so the shortcut reopens the app, not the landing page.
+  const reminder = new URL(pageURL);
+  reminder.search = ''; reminder.hash = '';
   reminder.searchParams.set('instagram', 'paused');
   return { url: url.href, apiKey: SUPABASE_KEY, reminder: reminder.href, zone };
 }
